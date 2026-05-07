@@ -2,6 +2,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { mergeMessages } from "./optimistic"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+const STREAMING_PART_FIELDS = ["text", "output"] as const
 
 export type MaterializedMessageRecord = {
   info: Message
@@ -53,6 +54,80 @@ function haveEquivalentPartSnapshots(left: Part[] | undefined, right: Part[]): b
   return true
 }
 
+function getPartEndTime(part: Part): number | undefined {
+  const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end
+  if (typeof stateEnd === "number") {
+    return stateEnd
+  }
+
+  const timeEnd = (part as { time?: { end?: unknown } }).time?.end
+  return typeof timeEnd === "number" ? timeEnd : undefined
+}
+
+function getStringField(part: Part, field: "text" | "output"): string | undefined {
+  const value = (part as Record<string, unknown>)[field]
+  return typeof value === "string" ? value : undefined
+}
+
+function hasLiveStreamingField(part: Part): boolean {
+  if (getPartEndTime(part) !== undefined) return false
+  return STREAMING_PART_FIELDS.some((field) => {
+    const value = getStringField(part, field)
+    return typeof value === "string" && value.length > 0
+  })
+}
+
+function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
+  if (!existing || getPartEndTime(next) !== undefined) return next
+
+  let merged: Part = next
+  for (const field of STREAMING_PART_FIELDS) {
+    const existingValue = getStringField(existing, field)
+    if (!existingValue) continue
+
+    const nextValue = getStringField(next, field)
+    if (typeof nextValue === "string" && nextValue.length >= existingValue.length) continue
+    if (typeof nextValue === "string" && nextValue.length > 0 && !existingValue.startsWith(nextValue)) continue
+
+    if (merged === next) merged = { ...next }
+    const mergedRecord = merged as Record<string, unknown>
+    mergedRecord[field] = existingValue
+  }
+
+  return merged
+}
+
+function mergeMaterializedParts(
+  existing: Part[] | undefined,
+  nextParts: Part[],
+  skipPartTypes: ReadonlySet<string>,
+  preserveLiveStreamingParts: boolean,
+): Part[] {
+  if (!existing || existing.length === 0) return nextParts
+  if (!preserveLiveStreamingParts) return nextParts
+
+  const existingByID = new Map(existing.map((part) => [part.id, part]))
+  let mergedParts = nextParts
+  let changed = false
+
+  for (let index = 0; index < nextParts.length; index += 1) {
+    const nextPart = nextParts[index]
+    const mergedPart = mergeMaterializedPart(existingByID.get(nextPart.id), nextPart)
+    if (mergedPart === nextPart) continue
+    if (!changed) mergedParts = [...nextParts]
+    mergedParts[index] = mergedPart
+    changed = true
+  }
+
+  const snapshotIDs = new Set(nextParts.map((part) => part.id))
+  const missingLiveParts = existing.filter(
+    (part) => !!part?.id && !snapshotIDs.has(part.id) && !skipPartTypes.has(part.type) && hasLiveStreamingField(part),
+  )
+  if (missingLiveParts.length === 0) return mergedParts
+
+  return [...mergedParts, ...missingLiveParts].sort((a, b) => cmp(a.id, b.id))
+}
+
 export function materializeSessionSnapshots(
   state: MaterializedState,
   sessionID: string,
@@ -76,8 +151,13 @@ export function materializeSessionSnapshots(
     const messageID = record.info.id
     if (isPrepend && nextPartState[messageID]) continue
 
-    const nextParts = sortParts(record.parts ?? [], skipPartTypes)
     const existing = nextPartState[messageID]
+    const nextParts = mergeMaterializedParts(
+      existing,
+      sortParts(record.parts ?? [], skipPartTypes),
+      skipPartTypes,
+      record.info.role === "assistant",
+    )
     if (haveEquivalentPartSnapshots(existing, nextParts)) continue
 
     if (nextParts.length === 0) {

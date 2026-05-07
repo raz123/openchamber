@@ -6,8 +6,12 @@ function message(id: string, sessionID = "ses_1"): Message {
   return { id, sessionID, role: "assistant", time: { created: 1 } } as Message
 }
 
-function part(id: string, messageID: string, type = "text"): Part {
-  return { id, messageID, sessionID: "ses_1", type, text: id } as Part
+function userMessage(id: string, sessionID = "ses_1"): Message {
+  return { id, sessionID, role: "user", time: { created: 1 } } as Message
+}
+
+function part(id: string, messageID: string, type = "text", text = id): Part {
+  return { id, messageID, sessionID: "ses_1", type, text } as Part
 }
 
 describe("materializeSessionSnapshots", () => {
@@ -50,6 +54,57 @@ describe("materializeSessionSnapshots", () => {
     )
 
     expect(result.part.msg_1.map((item) => item.id)).toEqual(["prt_text"])
+  })
+
+  test("preserves newer live streaming text when a stale snapshot materializes", () => {
+    const livePart = part("prt_1", "msg_1", "text", "First chunk ")
+    const stalePart = part("prt_1", "msg_1", "text", "")
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [livePart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [stalePart] }],
+    )
+
+    expect(result.part.msg_1[0]).toBe(livePart)
+    expect((result.part.msg_1[0] as { text?: string })?.text).toBe("First chunk ")
+  })
+
+  test("preserves live streaming parts omitted by a stale snapshot", () => {
+    const livePart = part("prt_1", "msg_1", "text", "First chunk ")
+    const state = {
+      message: { ses_1: [message("msg_1")] },
+      part: { msg_1: [livePart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: message("msg_1"), parts: [] }],
+    )
+
+    expect(result.part.msg_1[0]).toBe(livePart)
+  })
+
+  test("does not preserve omitted optimistic user text parts beside server snapshot parts", () => {
+    const optimisticPart = { id: "prt_optimistic", messageID: "msg_1", type: "text", text: "Hello" } as Part
+    const serverPart = part("prt_server", "msg_1", "text", "Hello")
+    const state = {
+      message: { ses_1: [userMessage("msg_1")] },
+      part: { msg_1: [optimisticPart] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: userMessage("msg_1"), parts: [serverPart] }],
+    )
+
+    expect(result.part.msg_1).toEqual([serverPart])
   })
 })
 
