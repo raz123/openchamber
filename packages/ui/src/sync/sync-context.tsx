@@ -1233,9 +1233,11 @@ function handleEvent(
 
   // Snapshot materialization is driven by typed reducer outcomes, not by
   // inferring meaning from a generic false/no-change result.
-  const materializationSessionID = materializationResult?.sessionID ?? getSessionIdFromPayload(payload) ?? undefined
-  if (materializationSessionID) {
-    enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores)
+  if (materializationResult) {
+    const materializationSessionID = materializationResult.sessionID ?? getSessionIdFromPayload(payload) ?? undefined
+    if (materializationSessionID) {
+      enqueueSessionMaterialization(resolvedDirectory, materializationSessionID, childStores)
+    }
   }
 
   updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
