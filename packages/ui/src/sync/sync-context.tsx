@@ -542,6 +542,29 @@ const findSessionInChildStores = (
   return null
 }
 
+const childStoreHasSessionState = (
+  childStores: ChildStoreManager,
+  directory: string,
+  sessionID: string,
+): boolean => {
+  const store = childStores.getChild(directory)
+  if (!store) return false
+  const state = store.getState()
+  return state.session.some((session) => session.id === sessionID)
+    || Object.prototype.hasOwnProperty.call(state.message, sessionID)
+    || Object.prototype.hasOwnProperty.call(state.session_status ?? {}, sessionID)
+}
+
+const childStoreHasMessagePartState = (
+  childStores: ChildStoreManager,
+  directory: string,
+  messageID: string,
+): boolean => {
+  const store = childStores.getChild(directory)
+  if (!store) return false
+  return Object.prototype.hasOwnProperty.call(store.getState().part, messageID)
+}
+
 const resolveDirectoryFromRoutingIndex = (
   routingIndex: EventRoutingIndex,
   rawDirectory: string,
@@ -552,8 +575,13 @@ const resolveDirectoryFromRoutingIndex = (
 
   const sessionID = getSessionIdFromPayload(payload)
   if (sessionID) {
+    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasSessionState(childStores, normalizedDirectory, sessionID)) {
+      setIndexedSessionDirectory(routingIndex, sessionID, normalizedDirectory)
+      return normalizedDirectory
+    }
+
     const indexedDirectory = routingIndex.sessionDirectoryById.get(sessionID)
-    if (indexedDirectory) {
+    if (indexedDirectory && childStores.getChild(indexedDirectory)) {
       return indexedDirectory
     }
 
@@ -567,10 +595,14 @@ const resolveDirectoryFromRoutingIndex = (
 
   const messageID = getMessageIdFromPayload(payload)
   if (messageID) {
+    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasMessagePartState(childStores, normalizedDirectory, messageID)) {
+      return normalizedDirectory
+    }
+
     const sessionFromMessage = routingIndex.messageSessionById.get(messageID)
     if (sessionFromMessage) {
       const indexedDirectory = routingIndex.sessionDirectoryById.get(sessionFromMessage)
-      if (indexedDirectory) {
+      if (indexedDirectory && childStores.getChild(indexedDirectory)) {
         return indexedDirectory
       }
     }

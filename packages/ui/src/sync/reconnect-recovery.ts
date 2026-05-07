@@ -1,5 +1,6 @@
 import type { SessionStatus, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
+import { getSessionMaterializationStatus } from "./materialization"
 
 type ReconnectRecoveryState = {
   session: Session[]
@@ -27,16 +28,13 @@ export function getReconnectCandidateSessionIds(state: ReconnectRecoveryState, o
 
   for (const [sessionId, messages] of Object.entries(state.message ?? {})) {
     const lastMessage = messages[messages.length - 1]
-    const lastAssistantComplete = lastMessage
-      && lastMessage.role === "assistant"
-      && typeof (lastMessage as { time?: { completed?: number } }).time?.completed === "number"
     if (
       lastMessage
       && lastMessage.role === "assistant"
       && typeof (lastMessage as { time?: { completed?: number } }).time?.completed !== "number"
     ) {
       ids.add(sessionId)
-    } else if (lastAssistantComplete && state.part && (state.part[lastMessage.id]?.length ?? 0) === 0) {
+    } else if (!getSessionMaterializationStatus({ message: state.message ?? {}, part: state.part ?? {} }, sessionId).renderable) {
       ids.add(sessionId)
     }
   }
