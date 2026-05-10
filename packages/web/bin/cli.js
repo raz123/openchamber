@@ -9,6 +9,7 @@ import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { isModuleCliExecution } from './cli-entry.js';
 import { cloudflareTunnelProviderCapabilities } from '../server/lib/tunnels/providers/cloudflare.js';
+import { createRemoteClientAuthRuntime } from '../server/lib/client-auth/remote-clients.js';
 import {
   intro as clackIntro, outro as clackOutro, log as clackLog,
   box as clackBox, confirm as clackConfirm,
@@ -35,6 +36,7 @@ const TUNNEL_PROFILES_VERSION = 1;
 const TUNNEL_PROFILES_FILE_NAME = 'tunnel-profiles.json';
 const LEGACY_CLOUDFLARE_MANAGED_REMOTE_FILE_NAME = 'cloudflare-managed-remote-tunnels.json';
 const TUNNEL_CLI_STATE_FILE_NAME = 'tunnel-cli-state.json';
+const REMOTE_CLIENTS_FILE_NAME = 'remote-clients.json';
 const TUNNEL_BOOTSTRAP_TTL_DEFAULT_MS = 30 * 60 * 1000;
 const TUNNEL_BOOTSTRAP_TTL_MIN_MS = 60 * 1000;
 const TUNNEL_BOOTSTRAP_TTL_MAX_MS = 24 * 60 * 60 * 1000;
@@ -168,6 +170,21 @@ function buildLocalUrl(port, endpoint = '') {
   const host = formatHostForUrl(resolveApiHost());
   const pathPart = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   return `http://${host}:${port}${pathPart}`;
+}
+
+function getOpenChamberDataDir() {
+  return process.env.OPENCHAMBER_DATA_DIR
+    ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+    : path.join(os.homedir(), '.config', 'openchamber');
+}
+
+function buildClientConnectionPayload({ serverUrl, token, label }) {
+  const params = new URLSearchParams();
+  params.set('v', '1');
+  params.set('server', serverUrl.trim().replace(/\/+$/, ''));
+  params.set('token', token.trim());
+  if (label?.trim()) params.set('label', label.trim());
+  return `openchamber://connect?${params.toString()}`;
 }
 
 function formatUnsafePortWarning(port) {
@@ -858,6 +875,7 @@ COMMANDS:
   status         Show server status
   tunnel         Tunnel lifecycle commands
   logs           Tail OpenChamber logs
+  connect-url    Generate URL/QR for connecting another client
   update         Check for and install updates
 
 OPTIONS:
@@ -882,6 +900,7 @@ EXAMPLES:
   openchamber                    # Start in daemon mode on default port 3000 (or free port)
   openchamber --port 8080        # Start on port 8080 (daemon)
   openchamber serve --foreground # Start in foreground (for systemd Type=simple)
+  openchamber connect-url --port 3000 --qr
   openchamber tunnel help        # Show tunnel lifecycle help
   openchamber logs               # Follow logs for latest running instance
 `);
@@ -3098,6 +3117,39 @@ const commands = {
     }
 
     return resolvedPort;
+  },
+
+  async 'connect-url'(options = {}) {
+    assertSafeBrowserPort(options.port, { context: 'OpenChamber connect-url' });
+    const serverUrl = buildLocalUrl(options.port, '/').replace(/\/+$/, '');
+    const label = options.name || `OpenChamber ${serverUrl}`;
+    const runtime = createRemoteClientAuthRuntime({
+      fsPromises: fs.promises,
+      path,
+      crypto,
+      storePath: path.join(getOpenChamberDataDir(), REMOTE_CLIENTS_FILE_NAME),
+    });
+    const result = await runtime.createClient({ label });
+    const connectUrl = buildClientConnectionPayload({ serverUrl, token: result.token, label });
+
+    if (isJsonMode(options)) {
+      printJson({ serverUrl, connectUrl, token: result.token, client: result.client });
+      return;
+    }
+
+    if (isQuietMode(options)) {
+      process.stdout.write(`${connectUrl}\n`);
+      return;
+    }
+
+    clackIntro('OpenChamber connect URL');
+    logStatus('success', connectUrl);
+    clackLog.info(`Server URL: ${serverUrl}`);
+    clackLog.info('Copy this connection link into another OpenChamber client. The token is shown only once.');
+    if (options.qr === true) {
+      await printQrCode(connectUrl);
+    }
+    clackOutro('connect URL generated');
   },
 
   async stop(options) {

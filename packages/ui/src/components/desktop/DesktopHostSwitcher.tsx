@@ -10,19 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   RiAddLine,
   RiCheckLine,
   RiCloudOffLine,
   RiEarthLine,
   RiLoader4Line,
-  RiMore2Line,
-  RiPencilLine,
   RiPlug2Line,
   RiRefreshLine,
   RiServerLine,
@@ -30,12 +22,11 @@ import {
   RiShieldKeyholeLine,
   RiStarFill,
   RiStarLine,
-  RiDeleteBinLine,
   RiWindowLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
-import { isTauriShell, isDesktopShell } from '@/lib/desktop';
+import { isElectronShell, isTauriShell, isDesktopShell } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import {
@@ -43,12 +34,14 @@ import {
   desktopHostsGet,
   desktopHostsSet,
   desktopOpenNewWindowAtUrl,
+  getDesktopHostApiUrl,
   locationMatchesHost,
   normalizeHostUrl,
   redactSensitiveUrl,
   type DesktopHost,
   type HostProbeResult,
 } from '@/lib/desktopHosts';
+import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
   desktopSshConnect,
   desktopSshDisconnect,
@@ -86,13 +79,6 @@ const toNavigationUrl = (rawUrl: string): string => {
 const getLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
   return window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
-};
-
-const makeId = (): string => {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `host-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
 const statusDotClass = (status: HostProbeResult['status'] | null): string => {
@@ -238,8 +224,25 @@ const buildLocalHost = (): DesktopHost => ({
 const resolveCurrentHost = (hosts: DesktopHost[]) => {
   const currentHref = typeof window === 'undefined' ? '' : window.location.href;
   const localOrigin = getLocalOrigin();
+  const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
   const normalizedLocal = normalizeHostUrl(localOrigin) || localOrigin;
   const normalizedCurrent = normalizeHostUrl(currentHref) || currentHref;
+
+  if (runtimeApiBaseUrl && locationMatchesHost(runtimeApiBaseUrl, localOrigin)) {
+    return { id: LOCAL_HOST_ID, label: 'Local', url: normalizedLocal };
+  }
+
+  const runtimeMatch = hosts.find((h) => {
+    return runtimeApiBaseUrl ? locationMatchesHost(runtimeApiBaseUrl, getDesktopHostApiUrl(h)) : false;
+  });
+
+  if (runtimeMatch) {
+    return {
+      id: runtimeMatch.id,
+      label: runtimeMatch.label,
+      url: normalizeHostUrl(getDesktopHostApiUrl(runtimeMatch)) || getDesktopHostApiUrl(runtimeMatch),
+    };
+  }
 
   if (currentHref && locationMatchesHost(currentHref, localOrigin)) {
     return { id: LOCAL_HOST_ID, label: 'Local', url: normalizedLocal };
@@ -307,9 +310,7 @@ export function DesktopHostSwitcherDialog({
   const [editLabel, setEditLabel] = React.useState('');
   const [editUrl, setEditUrl] = React.useState('');
 
-  const [newLabel, setNewLabel] = React.useState('');
-  const [newUrl, setNewUrl] = React.useState('');
-  const [isAddFormOpen, setIsAddFormOpen] = React.useState(!embedded);
+  const [runtimeEndpointEpoch, setRuntimeEndpointEpoch] = React.useState(0);
   const sshSwitchTokenRef = React.useRef(0);
 
   const allHosts = React.useMemo(() => {
@@ -321,7 +322,14 @@ export function DesktopHostSwitcherDialog({
     return [local, ...normalizedRemote];
   }, [configHosts]);
 
-  const current = React.useMemo(() => resolveCurrentHost(allHosts), [allHosts]);
+  React.useEffect(() => {
+    return subscribeRuntimeEndpointChanged(() => setRuntimeEndpointEpoch((epoch) => epoch + 1));
+  }, []);
+
+  const current = React.useMemo(() => {
+    void runtimeEndpointEpoch;
+    return resolveCurrentHost(allHosts);
+  }, [allHosts, runtimeEndpointEpoch]);
   const currentDefaultLabel = React.useMemo(() => {
     const id = defaultHostId || LOCAL_HOST_ID;
     return allHosts.find((h) => h.id === id)?.label || t('desktopHostSwitcher.instance.local');
@@ -384,7 +392,7 @@ export function DesktopHostSwitcherDialog({
     try {
       const results = await Promise.all(
         hosts.map(async (h) => {
-          const url = normalizeHostUrl(h.url);
+          const url = normalizeHostUrl(isElectronShell() ? getDesktopHostApiUrl(h) : h.url);
           if (!url) {
             return [h.id, { status: 'unreachable' as const, latencyMs: 0 } satisfies HostStatus] as const;
           }
@@ -407,16 +415,13 @@ export function DesktopHostSwitcherDialog({
       setEditingId(null);
       setEditLabel('');
       setEditUrl('');
-      setNewLabel('');
-      setNewUrl('');
-      setIsAddFormOpen(!embedded);
       setSwitchingHostId(null);
       setSshSwitchModal({ open: false, hostId: null, hostLabel: '', phase: 'idle', detail: null, error: null });
       setError('');
       return;
     }
     void refresh();
-  }, [embedded, open, refresh]);
+  }, [open, refresh]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -451,7 +456,29 @@ export function DesktopHostSwitcherDialog({
 
   const handleSwitch = React.useCallback(async (host: DesktopHost) => {
     const origin = host.id === LOCAL_HOST_ID ? getLocalOrigin() : (normalizeHostUrl(host.url) || '');
+    const apiOrigin = host.id === LOCAL_HOST_ID ? getLocalOrigin() : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
     if (!origin) return;
+
+    if (isElectronShell()) {
+      if (!apiOrigin) return;
+      setSwitchingHostId(host.id);
+      const probe = await desktopHostProbe(apiOrigin).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+      setStatusById((prev) => ({
+        ...prev,
+        [host.id]: { status: probe.status, latencyMs: probe.latencyMs },
+      }));
+
+      if (isBlockedHostStatus(probe.status)) {
+        toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', { host: redactSensitiveUrl(host.label) }));
+        setSwitchingHostId(null);
+        return;
+      }
+
+      switchRuntimeEndpoint({ apiBaseUrl: apiOrigin, clientToken: host.clientToken || null });
+      onHostSwitched?.();
+      setSwitchingHostId(null);
+      return;
+    }
 
     const isSshHost = Boolean(sshHostIds[host.id]);
 
@@ -564,13 +591,6 @@ export function DesktopHostSwitcherDialog({
     }
   }, [onHostSwitched, sshHostIds, sshStatusesById, t]);
 
-  const beginEdit = React.useCallback((host: DesktopHost) => {
-    setEditingId(host.id);
-    setEditLabel(host.label);
-    setEditUrl(host.url);
-    setError('');
-  }, []);
-
   const cancelEdit = React.useCallback(() => {
     setEditingId(null);
     setEditLabel('');
@@ -600,31 +620,6 @@ export function DesktopHostSwitcherDialog({
     cancelEdit();
   }, [cancelEdit, configHosts, defaultHostId, editLabel, editUrl, editingId, persist, t]);
 
-  const addHost = React.useCallback(async () => {
-    const url = normalizeHostUrl(newUrl);
-    if (!url) {
-      setError(t('desktopHostSwitcher.error.invalidUrl'));
-      return;
-    }
-    const label = (newLabel || redactSensitiveUrl(url)).trim();
-    const id = makeId();
-
-    const nextHosts = [{ id, label, url }, ...configHosts];
-    await persist(nextHosts, defaultHostId);
-    setNewLabel('');
-    setNewUrl('');
-    if (embedded) {
-      setIsAddFormOpen(false);
-    }
-  }, [configHosts, defaultHostId, embedded, newLabel, newUrl, persist, t]);
-
-  const deleteHost = React.useCallback(async (id: string) => {
-    if (id === LOCAL_HOST_ID) return;
-    const nextHosts = configHosts.filter((h) => h.id !== id);
-    const nextDefault = defaultHostId === id ? LOCAL_HOST_ID : defaultHostId;
-    await persist(nextHosts, nextDefault);
-  }, [configHosts, defaultHostId, persist]);
-
   const setDefault = React.useCallback(async (id: string) => {
     const next = id === LOCAL_HOST_ID ? LOCAL_HOST_ID : id;
     await persist(configHosts, next);
@@ -653,6 +648,11 @@ export function DesktopHostSwitcherDialog({
       phase: 'idle',
     }));
     const localTarget = toNavigationUrl(getLocalOrigin());
+    if (isElectronShell()) {
+      switchRuntimeEndpoint({ apiBaseUrl: getLocalOrigin(), clientToken: null });
+      onHostSwitched?.();
+      return;
+    }
     onHostSwitched?.();
     window.location.assign(localTarget);
   }, [onHostSwitched]);
@@ -867,42 +867,10 @@ export function DesktopHostSwitcherDialog({
 
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {!isLocal && !isSsh && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              className="h-8 w-8 rounded-md inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-interactive-hover transition-colors"
-                              aria-label={t('desktopHostSwitcher.actions.instanceActionsAria')}
-                              disabled={isSaving}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <RiMore2Line className="h-4 w-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-fit min-w-28">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                beginEdit(host);
-                              }}
-                              disabled={isSaving}
-                            >
-                              <RiPencilLine className="h-4 w-4 mr-1" />
-                              {t('desktopHostSwitcher.actions.edit')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void deleteHost(host.id);
-                              }}
-                              className="text-destructive focus:text-destructive"
-                              disabled={isSaving}
-                            >
-                              <RiDeleteBinLine className="h-4 w-4 mr-1" />
-                              {t('desktopHostSwitcher.actions.delete')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div
+                          className="h-8 w-8 opacity-0 pointer-events-none"
+                          aria-hidden="true"
+                        />
                       )}
 
                       {isLocal && (
@@ -1025,68 +993,16 @@ export function DesktopHostSwitcherDialog({
           </div>
         )}
 
-        {embedded && !isAddFormOpen ? (
-          <div className="flex-shrink-0 border-t border-[var(--interactive-border)]">
-            <button
-              type="button"
-              className="w-full flex items-center gap-2 px-2 py-2 text-left text-muted-foreground hover:text-foreground hover:bg-interactive-hover/30 transition-colors"
-              onClick={() => setIsAddFormOpen(true)}
-              disabled={!tauriAvailable || isSaving}
-            >
-              <RiAddLine className="h-4 w-4" />
-              <span className="typography-ui-label">{t('desktopHostSwitcher.actions.addInstance')}</span>
-            </button>
-          </div>
-        ) : (
-          <div className={cn(
-            'flex-shrink-0',
-            embedded
-              ? 'border-t border-[var(--interactive-border)] px-2 py-2'
-              : 'rounded-md border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-2.5'
-          )}>
-            <div className="flex items-center justify-between gap-2">
-              <div className="typography-ui-label font-medium text-foreground">{t('desktopHostSwitcher.add.title')}</div>
-              <div className="flex items-center gap-2">
-                {embedded && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsAddFormOpen(false)}
-                    disabled={isSaving}
-                  >
-                    {t('desktopHostSwitcher.actions.cancel')}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => void addHost()}
-                  disabled={!tauriAvailable || isSaving || !newUrl.trim()}
-                >
-                  {isSaving ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null}
-                  {t('desktopHostSwitcher.actions.add')}
-                </Button>
-              </div>
-            </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Input
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                onKeyDown={stopDropdownTypeahead}
-                placeholder={t('desktopHostSwitcher.field.labelOptionalPlaceholder')}
-                disabled={!tauriAvailable || isSaving}
-              />
-              <Input
-                value={newUrl}
-                onChange={(e) => setNewUrl(e.target.value)}
-                onKeyDown={stopDropdownTypeahead}
-                placeholder={t('desktopHostSwitcher.field.urlPlaceholder')}
-                disabled={!tauriAvailable || isSaving}
-              />
-            </div>
-          </div>
-        )}
+        <div className="flex-shrink-0 border-t border-[var(--interactive-border)]">
+          <button
+            type="button"
+            className="w-full flex items-center gap-2 px-2 py-2 text-left text-muted-foreground hover:text-foreground hover:bg-interactive-hover/30 transition-colors"
+            onClick={openRemoteInstancesSettings}
+          >
+            <RiAddLine className="h-4 w-4" />
+            <span className="typography-ui-label">{t('desktopHostSwitcher.actions.addInstance')}</span>
+          </button>
+        </div>
 
         {error && (
           <div className="flex-shrink-0 typography-meta text-status-error">{error}</div>
@@ -1215,7 +1131,11 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
       if (!localUrl) {
         throw new Error('Connected but missing forwarded URL');
       }
-      window.location.assign(toNavigationUrl(localUrl));
+      if (isElectronShell()) {
+        switchRuntimeEndpoint({ apiBaseUrl: localUrl, clientToken: null });
+      } else {
+        window.location.assign(toNavigationUrl(localUrl));
+      }
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1243,7 +1163,11 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
       .then((cfg) => desktopHostsSet({ hosts: cfg.hosts, defaultHostId: LOCAL_HOST_ID }))
       .catch(() => undefined);
 
-    window.location.assign(toNavigationUrl(getLocalOrigin()));
+    if (isElectronShell()) {
+      switchRuntimeEndpoint({ apiBaseUrl: getLocalOrigin(), clientToken: null });
+    } else {
+      window.location.assign(toNavigationUrl(getLocalOrigin()));
+    }
   }, []);
 
   const retryStartupSsh = React.useCallback(() => {
@@ -1266,6 +1190,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
         const current = resolveCurrentHost(all);
 
         if (
+          !isElectronShell() &&
           !attemptedDefaultSshConnectRef.current &&
           current.id === LOCAL_HOST_ID &&
           cfg.defaultHostId &&
@@ -1321,7 +1246,10 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
     return null;
   }
 
-  const isCurrentlyLocal = locationMatchesHost(window.location.href, getLocalOrigin());
+  const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
+  const isCurrentlyLocal = runtimeApiBaseUrl
+    ? locationMatchesHost(runtimeApiBaseUrl, getLocalOrigin())
+    : locationMatchesHost(window.location.href, getLocalOrigin());
 
   const fallbackLabel = typeof window !== 'undefined' && window.location.hostname
     ? window.location.hostname

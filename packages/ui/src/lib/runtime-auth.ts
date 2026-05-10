@@ -5,6 +5,7 @@ export type RuntimeAuthCredential =
 export type RuntimeAuthCredentialProvider = () => RuntimeAuthCredential | Promise<RuntimeAuthCredential>;
 
 let credentialProvider: RuntimeAuthCredentialProvider = () => null;
+let runtimeBearerToken = '';
 
 const normalizeBearerToken = (token: string | null | undefined): string => {
   if (typeof token !== 'string') return '';
@@ -12,17 +13,22 @@ const normalizeBearerToken = (token: string | null | undefined): string => {
 };
 
 export const setRuntimeAuthCredentialProvider = (provider: RuntimeAuthCredentialProvider): void => {
+  runtimeBearerToken = '';
   credentialProvider = provider;
 };
 
 export const clearRuntimeAuthCredentialProvider = (): void => {
+  runtimeBearerToken = '';
   credentialProvider = () => null;
 };
 
 export const setRuntimeBearerToken = (token: string | null | undefined): void => {
   const normalized = normalizeBearerToken(token);
+  runtimeBearerToken = normalized;
   credentialProvider = () => normalized ? { type: 'bearer', token: normalized } : null;
 };
+
+export const getRuntimeBearerTokenSync = (): string => runtimeBearerToken;
 
 export const getRuntimeAuthCredential = async (): Promise<RuntimeAuthCredential> => {
   const credential = await credentialProvider();

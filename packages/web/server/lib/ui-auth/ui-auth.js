@@ -246,10 +246,22 @@ const parseCookies = (cookieHeader) => {
 const getBearerTokenFromRequest = (req) => {
   const header = req?.headers?.authorization;
   const value = Array.isArray(header) ? header[0] : header;
-  if (typeof value !== 'string') return null;
-  const match = value.match(/^Bearer\s+(.+)$/i);
-  const token = match?.[1]?.trim() || '';
-  return token || null;
+  if (typeof value === 'string') {
+    const match = value.match(/^Bearer\s+(.+)$/i);
+    const token = match?.[1]?.trim() || '';
+    if (token) return token;
+  }
+
+  const queryToken = req?.query?.oc_client_token;
+  let token = Array.isArray(queryToken) ? queryToken[0] : queryToken;
+  if (typeof token !== 'string' && typeof req?.url === 'string') {
+    try {
+      token = new URL(req.url, 'http://localhost').searchParams.get('oc_client_token') || undefined;
+    } catch {
+      token = undefined;
+    }
+  }
+  return typeof token === 'string' && token.trim() ? token.trim() : null;
 };
 
 const buildCookie = ({

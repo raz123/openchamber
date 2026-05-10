@@ -50,6 +50,7 @@ interface ProjectsStore {
   removeProjectIcon: (id: string) => Promise<{ ok: boolean; error?: string }>;
   discoverProjectIcon: (id: string, options?: { force?: boolean }) => Promise<{ ok: boolean; skipped?: boolean; reason?: string; error?: string }>;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
+  resetForRuntimeSwitch: () => void;
   validateProjectPath: (path: string) => ProjectPathValidationResult;
   synchronizeFromSettings: (settings: DesktopSettings) => void;
   getActiveProject: () => ProjectEntry | null;
@@ -656,6 +657,14 @@ export const useProjectsStore = create<ProjectsStore>()(
 
       set({ projects: nextProjects });
       persistProjects(nextProjects, activeProjectId);
+    },
+
+    resetForRuntimeSwitch: () => {
+      if (vscodeWorkspace) {
+        return;
+      }
+      set({ projects: [], activeProjectId: null });
+      cacheProjects([], null);
     },
 
     synchronizeFromSettings: (settings: DesktopSettings) => {

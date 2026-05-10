@@ -5,6 +5,7 @@ import {
   getRuntimeUrlResolver,
   setRuntimeUrlResolver,
 } from './runtime-url';
+import { setRuntimeBearerToken } from './runtime-auth';
 
 describe('createRuntimeUrlResolver', () => {
   test('preserves relative same-origin URLs by default', () => {
@@ -59,6 +60,23 @@ describe('createRuntimeUrlResolver', () => {
       expect(getRuntimeUrlResolver().api('/api/version')).toBe('https://api.example/api/version');
     } finally {
       setRuntimeUrlResolver(previous);
+    }
+  });
+
+  test('adds client token query to realtime URLs only', () => {
+    setRuntimeBearerToken('oc_client_secret');
+    try {
+      const urls = createRuntimeUrlResolver({ apiBaseUrl: 'https://api.example' });
+
+      expect(urls.api('/api/config/settings')).toBe('https://api.example/api/config/settings');
+      expect(urls.sse('/api/openchamber/events')).toBe(
+        'https://api.example/api/openchamber/events?oc_client_token=oc_client_secret',
+      );
+      expect(urls.websocket('/api/global/event/ws', { lastEventId: 'evt-1' })).toBe(
+        'wss://api.example/api/global/event/ws?lastEventId=evt-1&oc_client_token=oc_client_secret',
+      );
+    } finally {
+      setRuntimeBearerToken(null);
     }
   });
 });

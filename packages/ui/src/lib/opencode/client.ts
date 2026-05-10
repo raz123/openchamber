@@ -188,6 +188,19 @@ class OpencodeService {
     return this.baseUrl;
   }
 
+  reconnectToRuntimeBaseUrl(): void {
+    const runtimeBase = resolveRuntimeBaseUrl();
+    const nextBaseUrl = ensureAbsoluteBaseUrl(runtimeBase || DEFAULT_BASE_URL);
+    if (nextBaseUrl === this.baseUrl) {
+      return;
+    }
+    this.baseUrl = nextBaseUrl;
+    this.client = createOpencodeClient({ baseUrl: this.baseUrl });
+    this.scopedClients.clear();
+    this.listDirectoryInFlight.clear();
+    this.listDirectoryCache.clear();
+  }
+
   /** Expose the raw SDK client for direct use (e.g., SyncProvider) */
   getSdkClient(): OpencodeClient {
     return this.client;
