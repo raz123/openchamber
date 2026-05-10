@@ -84,6 +84,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.project.sessionsSingle': '1 个会话',
   'mobile.sessions.project.sessionsPlural': '{count} 个会话',
   'mobile.files.refreshAria': '刷新文件',
+  'mobile.files.backToParentAria': '返回 {name}',
   'mobile.files.rootDirectory': '项目文件',
   'mobile.files.search.placeholder': '搜索文件',
   'mobile.files.search.empty': '未找到文件。',

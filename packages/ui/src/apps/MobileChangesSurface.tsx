@@ -420,7 +420,7 @@ export const MobileChangesSurface: React.FC<MobileChangesSurfaceProps> = ({ onCl
         <div className="min-w-0 flex-1 px-1">
           <h2 className="typography-ui-label text-foreground">{t('mobile.nav.changes')}</h2>
           <p className="truncate typography-micro text-muted-foreground">
-            {status?.current ? t('mobile.changes.branchLabel', { branch: status.current }) : currentDirectory}
+            {status?.current || currentDirectory}
           </p>
         </div>
         <SyncActions
@@ -502,10 +502,6 @@ const MobileDiffDetail: React.FC<{
 }> = ({ path, diff, fileExists, error, onBack, onRetry }) => {
   const { t } = useI18n();
   const language = React.useMemo(() => getLanguageFromExtension(path) || 'text', [path]);
-  const statsLabel = React.useMemo(() => {
-    if (!diff || diff.isBinary) return null;
-    return null;
-  }, [diff]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
@@ -520,7 +516,6 @@ const MobileDiffDetail: React.FC<{
         </button>
         <div className="min-w-0 flex-1 px-2">
           <h2 className="truncate typography-ui-header text-foreground">{path}</h2>
-          <p className="typography-meta text-muted-foreground">{statsLabel ?? t('mobile.changes.diffDetail.subtitle')}</p>
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-hidden">

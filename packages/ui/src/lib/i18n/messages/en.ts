@@ -83,6 +83,7 @@ export const dict = {
   'mobile.sessions.project.sessionsSingle': '1 session',
   'mobile.sessions.project.sessionsPlural': '{count} sessions',
   'mobile.files.refreshAria': 'Refresh files',
+  'mobile.files.backToParentAria': 'Back to {name}',
   'mobile.files.rootDirectory': 'Project files',
   'mobile.files.search.placeholder': 'Search files',
   'mobile.files.search.empty': 'No files found.',

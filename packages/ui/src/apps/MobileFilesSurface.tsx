@@ -243,9 +243,16 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
     );
   }
 
-  const parentDirectory = getParentDirectory(route.directory);
   const directoryLabel = route.directory === root ? t('mobile.files.rootDirectory') : getNameFromPath(route.directory);
   const visibleSearchResults = query.trim() ? searchResults : [];
+
+  // Cap parent navigation at the project root: only allow stepping up while
+  // the parent stays inside (or equal to) the root.
+  const rawParent = getParentDirectory(route.directory);
+  const parentWithinRoot =
+    route.directory !== root && rawParent !== null && (rawParent === root || rawParent.startsWith(`${root}/`));
+  const canGoBack = parentWithinRoot && !query.trim();
+  const parentDirectory = parentWithinRoot ? rawParent : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background text-foreground">
@@ -261,9 +268,19 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
             <RiCloseLine className="size-5" />
           </button>
         ) : null}
+        {canGoBack && parentDirectory ? (
+          <button
+            type="button"
+            className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            aria-label={t('mobile.files.backToParentAria', { name: getNameFromPath(parentDirectory) })}
+            onClick={() => openDirectory(parentDirectory)}
+            style={{ touchAction: 'manipulation' }}
+          >
+            <RiArrowLeftLine className="size-5" />
+          </button>
+        ) : null}
         <div className="min-w-0 flex-1 px-1">
           <h2 className="truncate typography-ui-label text-foreground">{directoryLabel}</h2>
-          <p className="truncate typography-micro text-muted-foreground">{t('layout.mainTab.files')}</p>
         </div>
         <button
           type="button"
@@ -294,15 +311,6 @@ export const MobileFilesSurface: React.FC<MobileFilesSurfaceProps> = ({ onClose 
           <MobileSearchResults results={visibleSearchResults} isSearching={isSearching} onOpenFile={openFile} />
         ) : (
           <div className="overflow-hidden rounded-2xl border border-border/40 bg-[var(--surface-elevated)]">
-            {parentDirectory ? (
-              <MobileFileRow
-                name={t('mobile.files.parentDirectory')}
-                path={parentDirectory}
-                directory
-                meta={getNameFromPath(parentDirectory)}
-                onClick={() => openDirectory(parentDirectory)}
-              />
-            ) : null}
             {entries.length === 0 && !isLoadingDirectory ? (
               <div className="px-4 py-8 text-center typography-body text-muted-foreground">{t('mobile.files.empty.directory')}</div>
             ) : null}

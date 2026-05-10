@@ -84,6 +84,7 @@ export const dict: Record<I18nKey, string> = {
   "mobile.sessions.project.sessionsSingle": "1 sessão",
   "mobile.sessions.project.sessionsPlural": "{count} sessões",
   "mobile.files.refreshAria": "Atualizar arquivos",
+  "mobile.files.backToParentAria": "Voltar para {name}",
   "mobile.files.rootDirectory": "Arquivos do projeto",
   "mobile.files.search.placeholder": "Buscar arquivos",
   "mobile.files.search.empty": "Nenhum arquivo encontrado.",

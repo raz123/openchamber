@@ -84,6 +84,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.sessions.project.sessionsSingle': '세션 1개',
   'mobile.sessions.project.sessionsPlural': '세션 {count}개',
   'mobile.files.refreshAria': '파일 새로고침',
+  'mobile.files.backToParentAria': '{name}(으)로 돌아가기',
   'mobile.files.rootDirectory': '프로젝트 파일',
   'mobile.files.search.placeholder': '파일 검색',
   'mobile.files.search.empty': '파일을 찾을 수 없습니다.',
