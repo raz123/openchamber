@@ -200,6 +200,7 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.actions.create': '토큰 만들기',
   'settings.remoteInstances.clientAuth.actions.pair': '링크 만들기',
   'settings.remoteInstances.clientAuth.actions.revoke': '해지',
+  'settings.remoteInstances.clientAuth.actions.clearRevoked': '해지된 항목 지우기',
   'settings.remoteInstances.clientAuth.qrAlt': 'OpenChamber connection QR code',
   'settings.remoteInstances.clientAuth.pairingUrl': '연결 링크',
   'settings.remoteInstances.clientAuth.createdToken': '지금 이 토큰을 복사하세요. 보안을 위해 다시 표시되지 않습니다.',

@@ -1,6 +1,7 @@
 import type {
   ClientAuthAPI,
   RemoteClientCreateResult,
+  RemoteClientPurgeRevokedResult,
   RemoteClientRecord,
   RemoteClientRevokeResult,
 } from '@openchamber/ui/lib/api/types';
@@ -44,6 +45,18 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
     const payload = await jsonOrNull<RemoteClientRevokeResult & { error?: string }>(response);
     if (!response.ok || !payload) {
       throw new Error(payload?.error || response.statusText || 'Failed to revoke remote client');
+    }
+    return payload;
+  },
+
+  async purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult> {
+    const response = await runtimeFetch('/api/client-auth/clients', {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    });
+    const payload = await jsonOrNull<RemoteClientPurgeRevokedResult & { error?: string }>(response);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.error || response.statusText || 'Failed to clear revoked clients');
     }
     return payload;
   },

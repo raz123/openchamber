@@ -17,6 +17,7 @@ import type { QuestionRequest } from "@/types/question";
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
+import { buildRuntimeAuthHeaders, getRuntimeBearerTokenSync } from "@/lib/runtime-auth";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -107,6 +108,23 @@ const resolveRuntimeBaseUrl = (): string | null => {
   }
 };
 
+const runtimeSdkFetch: typeof fetch = async (input, init) => {
+  const headers = await buildRuntimeAuthHeaders(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+  if (input instanceof Request) {
+    return fetch(new Request(input, { ...init, headers }));
+  }
+  return fetch(input, { ...init, headers });
+};
+
+const createRuntimeOpencodeClient = (config: { baseUrl: string; directory?: string }): OpencodeClient => {
+  const token = getRuntimeBearerTokenSync();
+  return createOpencodeClient({
+    ...config,
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+    fetch: runtimeSdkFetch,
+  });
+};
+
 interface App {
   version?: string;
   [key: string]: unknown;
@@ -181,7 +199,7 @@ class OpencodeService {
     const runtimeBase = resolveRuntimeBaseUrl();
     const requestedBaseUrl = runtimeBase || baseUrl;
     this.baseUrl = ensureAbsoluteBaseUrl(requestedBaseUrl);
-    this.client = createOpencodeClient({ baseUrl: this.baseUrl });
+    this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
   }
 
   getBaseUrl(): string {
@@ -195,7 +213,7 @@ class OpencodeService {
       return;
     }
     this.baseUrl = nextBaseUrl;
-    this.client = createOpencodeClient({ baseUrl: this.baseUrl });
+    this.client = createRuntimeOpencodeClient({ baseUrl: this.baseUrl });
     this.scopedClients.clear();
     this.listDirectoryInFlight.clear();
     this.listDirectoryCache.clear();
@@ -222,7 +240,7 @@ class OpencodeService {
     if (existing) {
       return existing;
     }
-    const scoped = createOpencodeClient({ baseUrl: this.baseUrl, directory: normalized });
+    const scoped = createRuntimeOpencodeClient({ baseUrl: this.baseUrl, directory: normalized });
     this.scopedClients.set(key, scoped);
     return scoped;
   }

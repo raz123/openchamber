@@ -39,6 +39,10 @@ describe('remote client auth runtime', () => {
       const revoked = await runtime.revokeClient(created.client.id);
       expect(revoked.revoked).toBe(true);
       expect(await runtime.authenticateBearerToken(created.token)).toBe(null);
+
+      const purged = await runtime.purgeRevokedClients();
+      expect(purged.purged).toBe(1);
+      expect(await runtime.listClients()).toHaveLength(0);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

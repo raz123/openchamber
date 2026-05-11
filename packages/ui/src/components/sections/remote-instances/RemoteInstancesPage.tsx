@@ -332,6 +332,7 @@ export const RemoteInstancesPage: React.FC = () => {
   const [remoteClientError, setRemoteClientError] = React.useState<string | null>(null);
   const [pairingUrl, setPairingUrl] = React.useState<string | null>(null);
   const [pairingQrDataUrl, setPairingQrDataUrl] = React.useState<string | null>(null);
+  const revokedClientCount = React.useMemo(() => remoteClients.filter((client) => Boolean(client.revokedAt)).length, [remoteClients]);
   const [sshAddDialogOpen, setSshAddDialogOpen] = React.useState(false);
   const [sshCommandDraft, setSshCommandDraft] = React.useState('ssh user@example.com');
   const [sshNameDraft, setSshNameDraft] = React.useState('');
@@ -539,6 +540,17 @@ export const RemoteInstancesPage: React.FC = () => {
     setRemoteClientError(null);
     try {
       await clientAuth.revokeClient(id);
+      await loadRemoteClients();
+    } catch (err) {
+      setRemoteClientError(err instanceof Error ? err.message : String(err));
+    }
+  }, [clientAuth, loadRemoteClients]);
+
+  const purgeRevokedRemoteClients = React.useCallback(async () => {
+    if (!clientAuth) return;
+    setRemoteClientError(null);
+    try {
+      await clientAuth.purgeRevokedClients();
       await loadRemoteClients();
     } catch (err) {
       setRemoteClientError(err instanceof Error ? err.message : String(err));
@@ -972,6 +984,13 @@ export const RemoteInstancesPage: React.FC = () => {
                 </div>
               ) : null}
               <div className="space-y-1">
+                {revokedClientCount > 0 ? (
+                  <div className="flex justify-end">
+                    <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void purgeRevokedRemoteClients()}>
+                      {t('settings.remoteInstances.clientAuth.actions.clearRevoked')}
+                    </Button>
+                  </div>
+                ) : null}
                 {remoteClientsLoading ? (
                   <p className="typography-meta text-muted-foreground">{t('settings.remoteInstances.clientAuth.state.loading')}</p>
                 ) : remoteClients.length === 0 ? (

@@ -105,6 +105,17 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     return { revoked: true, client: publicClient(client) };
   };
 
+  const purgeRevokedClients = async () => {
+    const store = await readStore();
+    const before = store.clients.length;
+    store.clients = store.clients.filter((entry) => !entry.revokedAt);
+    const purged = before - store.clients.length;
+    if (purged > 0) {
+      await writeStore(store);
+    }
+    return { purged };
+  };
+
   const authenticateBearerToken = async (token) => {
     if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) {
       return null;
@@ -122,6 +133,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     authenticateBearerToken,
     createClient,
     listClients,
+    purgeRevokedClients,
     revokeClient,
   };
 };

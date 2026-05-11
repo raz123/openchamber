@@ -1246,6 +1246,7 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.actions.create': 'Utwórz token',
   'settings.remoteInstances.clientAuth.actions.pair': 'Utwórz link',
   'settings.remoteInstances.clientAuth.actions.revoke': 'Unieważnij',
+  'settings.remoteInstances.clientAuth.actions.clearRevoked': 'Wyczyść unieważnione',
   'settings.remoteInstances.clientAuth.qrAlt': 'Kod QR połączenia OpenChamber',
   'settings.remoteInstances.clientAuth.pairingUrl': 'Link połączenia',
   'settings.remoteInstances.clientAuth.createdToken': 'Skopiuj ten token teraz. Ze względów bezpieczeństwa nie zostanie pokazany ponownie.',

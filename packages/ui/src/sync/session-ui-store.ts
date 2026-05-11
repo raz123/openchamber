@@ -58,6 +58,7 @@ import { useViewportStore } from "./viewport-store"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
 import { setSessionOpener } from "./session-navigation"
+import { getRuntimeKey } from "@/lib/runtime-switch"
 
 export type { AttachedFile }
 
@@ -211,6 +212,8 @@ export type SessionUIState = {
 
   // Actions — UI state management
   setCurrentSession: (id: string | null, directoryHint?: string | null) => void
+  prepareForRuntimeSwitch: (apiBaseUrl?: string | null) => void
+  restoreForRuntimeSwitch: (apiBaseUrl?: string | null) => void
   openNewSessionDraft: (options?: Partial<NewSessionDraftState>) => void
   closeNewSessionDraft: () => void
   setNewSessionDraftTarget: (target: { projectId?: string | null; selectedProjectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void
@@ -346,6 +349,13 @@ const DEFAULT_DRAFT: NewSessionDraftState = {
   parentID: null,
 }
 
+const activeSessionByRuntime = new Map<string, string | null>()
+
+const runtimeMemoryKey = (value?: string | null): string => {
+  const key = (value ?? getRuntimeKey()).trim()
+  return key || "default"
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -374,6 +384,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (id) {
       get().closeNewSessionDraft()
     }
+
+    activeSessionByRuntime.set(runtimeMemoryKey(), id)
 
     const previousSessionId = get().currentSessionId
 
@@ -417,6 +429,28 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     if (id) {
       markSessionViewed(id)
       setActiveSession(resolvedDir ?? "", id)
+    }
+  },
+
+  prepareForRuntimeSwitch: (apiBaseUrl?: string | null) => {
+    activeSessionByRuntime.set(runtimeMemoryKey(apiBaseUrl), get().currentSessionId)
+  },
+
+  restoreForRuntimeSwitch: (apiBaseUrl?: string | null) => {
+    const restoredSessionId = activeSessionByRuntime.get(runtimeMemoryKey(apiBaseUrl)) ?? null
+    set({
+      currentSessionId: restoredSessionId,
+      newSessionDraft: { ...DEFAULT_DRAFT },
+      abortPromptSessionId: null,
+      abortPromptExpiresAt: null,
+      error: null,
+      sessionAbortFlags: new Map(),
+      pendingChangesBarDismissed: new Map(),
+    })
+    if (restoredSessionId) {
+      setActiveSession(opencodeClient.getDirectory() ?? "", restoredSessionId)
+    } else {
+      setActiveSession("", "")
     }
   },
 

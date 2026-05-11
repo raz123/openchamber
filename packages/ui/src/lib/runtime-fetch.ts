@@ -26,6 +26,17 @@ const isCurrentWindowUrl = (url: URL): boolean => {
   }
 };
 
+const isActiveRuntimeApiUrl = (url: URL): boolean => {
+  try {
+    const apiBase = getRuntimeUrlResolver().api('/api');
+    if (!/^[a-z][a-z\d+.-]*:\/\//i.test(apiBase)) return false;
+    const base = new URL(apiBase);
+    return url.origin === base.origin && (url.pathname === base.pathname || url.pathname.startsWith(`${base.pathname.replace(/\/+$/, '')}/`));
+  } catch {
+    return false;
+  }
+};
+
 const shouldResolveFetchInput = (input: string): boolean => {
   if (shouldResolveApiPath(input)) return true;
   if (!/^[a-z][a-z\d+.-]*:\/\//i.test(input)) return false;
@@ -78,20 +89,48 @@ export const installRuntimeFetchBridge = (): void => {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     if (typeof input === 'string') {
-      if (!shouldResolveFetchInput(input)) return nativeFetch(input, init);
+      if (!shouldResolveFetchInput(input)) {
+        try {
+          const url = new URL(input);
+          if (isActiveRuntimeApiUrl(url)) {
+            const headers = await buildRuntimeAuthHeaders(init?.headers);
+            return nativeFetch(input, { ...init, headers });
+          }
+        } catch {
+          // Non-URL fetch inputs should fall through unchanged.
+        }
+        return nativeFetch(input, init);
+      }
       const headers = await buildRuntimeAuthHeaders(init?.headers);
       return nativeFetch(buildRuntimeFetchUrl(input), { ...init, headers });
     }
 
     if (input instanceof URL) {
       const raw = input.toString();
-      if (!shouldResolveFetchInput(raw)) return nativeFetch(input, init);
+      if (!shouldResolveFetchInput(raw)) {
+        if (isActiveRuntimeApiUrl(input)) {
+          const headers = await buildRuntimeAuthHeaders(init?.headers);
+          return nativeFetch(input, { ...init, headers });
+        }
+        return nativeFetch(input, init);
+      }
       const headers = await buildRuntimeAuthHeaders(init?.headers);
       return nativeFetch(buildRuntimeFetchUrl(raw), { ...init, headers });
     }
 
     if (input instanceof Request) {
-      if (!shouldResolveFetchInput(input.url)) return nativeFetch(input, init);
+      if (!shouldResolveFetchInput(input.url)) {
+        try {
+          const url = new URL(input.url);
+        if (isActiveRuntimeApiUrl(url)) {
+          const headers = await buildRuntimeAuthHeaders(init?.headers ?? input.headers);
+          return nativeFetch(new Request(input, { ...init, headers }));
+        }
+        } catch {
+          // Non-URL request inputs should fall through unchanged.
+        }
+        return nativeFetch(input, init);
+      }
       const headers = await buildRuntimeAuthHeaders(init?.headers ?? input.headers);
       const target = buildRuntimeFetchUrl(input.url);
       const request = target === input.url ? input : new Request(target, input);

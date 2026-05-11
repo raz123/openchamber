@@ -1,5 +1,6 @@
 export const createRequestSecurityRuntime = (deps) => {
   const { readSettingsFromDiskMigrated } = deps;
+  const packagedClientOrigins = new Set(['openchamber-ui://app']);
 
   const getUiSessionTokenFromRequest = (req) => {
     const cookieHeader = req?.headers?.cookie;
@@ -96,7 +97,7 @@ export const createRequestSecurityRuntime = (deps) => {
       return false;
     }
 
-    if ((process.env.OPENCHAMBER_RUNTIME || '') === 'desktop' && originHeader === 'openchamber-ui://app') {
+    if (packagedClientOrigins.has(originHeader)) {
       return true;
     }
 

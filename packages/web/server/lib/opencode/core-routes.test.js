@@ -63,6 +63,13 @@ describe('client auth routes', () => {
           client.revokedAt = 'revoked';
           return { revoked: true, client };
         },
+        purgeRevokedClients: async () => {
+          const before = clients.length;
+          for (let index = clients.length - 1; index >= 0; index -= 1) {
+            if (clients[index].revokedAt) clients.splice(index, 1);
+          }
+          return { purged: before - clients.length };
+        },
       },
       readSettingsFromDiskMigrated: async () => ({}),
       normalizeTunnelSessionTtlMs: () => 1000,
@@ -88,5 +95,12 @@ describe('client auth routes', () => {
     const revoked = await request(app).delete('/api/client-auth/clients/client-1');
     expect(revoked.status).toBe(200);
     expect(revoked.body.revoked).toBe(true);
+
+    const purged = await request(app).delete('/api/client-auth/clients');
+    expect(purged.status).toBe(200);
+    expect(purged.body.purged).toBe(1);
+
+    const listedAfterPurge = await request(app).get('/api/client-auth/clients');
+    expect(listedAfterPurge.body.clients).toHaveLength(0);
   });
 });

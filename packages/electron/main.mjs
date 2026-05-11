@@ -521,7 +521,7 @@ const isCompatibleVersionPayload = (payload) => {
     && compatibility.capabilities.includes('api.runtime-url.v1');
 };
 
-const probeHostWithTimeout = async (url, timeoutMs) => {
+const probeHostWithTimeout = async (url, timeoutMs, clientToken = '') => {
   const versionUrl = buildVersionUrl(url);
   if (!versionUrl) {
     throw new Error('Invalid URL');
@@ -529,7 +529,12 @@ const probeHostWithTimeout = async (url, timeoutMs) => {
 
   const started = Date.now();
   try {
-    const response = await fetch(versionUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
+    const headers = { Accept: 'application/json' };
+    const token = typeof clientToken === 'string' ? clientToken.trim() : '';
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    const response = await fetch(versionUrl, { signal: AbortSignal.timeout(timeoutMs), headers });
     const status = response.status;
     if (status === 401 || status === 403) {
       return { status: 'auth', latencyMs: Date.now() - started };
@@ -644,7 +649,8 @@ const buildPackagedUiUrl = (pathname = '/index.html') => new URL(pathname, `${pa
 
 const injectRuntimeConfigIntoHtml = (html) => {
   const apiBaseUrl = state.apiBaseUrl || state.sidecarUrl || '';
-  const initScript = `<script>window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(state.localOrigin || packagedUiOrigin())};window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(apiBaseUrl)};window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};</script>`;
+  const localOrigin = state.localOrigin || state.sidecarUrl || '';
+  const initScript = `<script>if(window.__OPENCHAMBER_LOCAL_ORIGIN__===undefined){window.__OPENCHAMBER_LOCAL_ORIGIN__=${JSON.stringify(localOrigin)};}if(window.__OPENCHAMBER_API_BASE_URL__===undefined){window.__OPENCHAMBER_API_BASE_URL__=${JSON.stringify(apiBaseUrl)};}if(window.__OPENCHAMBER_CLIENT_TOKEN__===undefined){window.__OPENCHAMBER_CLIENT_TOKEN__=${JSON.stringify(state.clientToken || '')};}</script>`;
   if (html.includes('<head>')) return html.replace('<head>', `<head>${initScript}`);
   if (html.includes('</head>')) return html.replace('</head>', `${initScript}</head>`);
   return `${initScript}${html}`;
@@ -1100,6 +1106,67 @@ const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) =
   }
 };
 
+const extractCookieHeader = (response) => {
+  const getSetCookie = typeof response.headers?.getSetCookie === 'function'
+    ? response.headers.getSetCookie.bind(response.headers)
+    : null;
+  const cookies = getSetCookie ? getSetCookie() : [];
+  const rawCookies = cookies.length > 0
+    ? cookies
+    : String(response.headers?.get?.('set-cookie') || '').split(/,(?=\s*[^;,=]+=[^;,]+)/);
+  return rawCookies
+    .map((cookie) => String(cookie || '').split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+};
+
+const loginRemoteAndIssueClientToken = async ({ url, password, trustDevice }) => {
+  const baseUrl = normalizeHostUrl(String(url || ''));
+  const candidatePassword = typeof password === 'string' ? password : '';
+  if (!baseUrl) throw new Error('Invalid URL');
+  if (!candidatePassword) throw new Error('Password is required');
+
+  const loginResponse = await fetch(new URL('/auth/session', `${baseUrl}/`).toString(), {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ password: candidatePassword, trustDevice: trustDevice === true }),
+  });
+  if (!loginResponse.ok) {
+    return { ok: false, status: loginResponse.status };
+  }
+
+  const loginPayload = await loginResponse.json().catch(() => null);
+  if (typeof loginPayload?.clientToken === 'string' && loginPayload.clientToken.trim()) {
+    return { ok: true, token: loginPayload.clientToken.trim() };
+  }
+
+  const cookie = extractCookieHeader(loginResponse);
+  if (!cookie) {
+    return { ok: false, status: 401 };
+  }
+
+  const tokenResponse = await fetch(new URL('/api/client-auth/clients', `${baseUrl}/`).toString(), {
+    method: 'POST',
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+    },
+    body: JSON.stringify({ label: 'OpenChamber Desktop' }),
+  });
+  if (!tokenResponse.ok) {
+    return { ok: false, status: tokenResponse.status };
+  }
+  const tokenPayload = await tokenResponse.json().catch(() => null);
+  const token = typeof tokenPayload?.token === 'string' ? tokenPayload.token.trim() : '';
+  return token ? { ok: true, token } : { ok: false, status: 500 };
+};
+
 const emitToWindow = (browserWindow, event, detail) => {
   if (!browserWindow || browserWindow.isDestroyed()) return;
   browserWindow.webContents.send('openchamber:emit', { event, detail });
@@ -1257,12 +1324,12 @@ const readThemeSource = () => {
   return 'system';
 };
 
-const createBrowserWindow = ({ label, restoreGeometry, url }) => {
+const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }) => {
   const saved = restoreGeometry ? readWindowState() : null;
   const useSaved = saved && typeof saved.width === 'number' && typeof saved.height === 'number';
-  const desktopLocalOrigin = state.localOrigin || '';
-  const desktopApiBaseUrl = state.apiBaseUrl || '';
-  const desktopClientToken = state.clientToken || '';
+  const desktopLocalOrigin = state.localOrigin || state.sidecarUrl || '';
+  const desktopApiBaseUrl = typeof runtimeConfig.apiBaseUrl === 'string' ? runtimeConfig.apiBaseUrl : (state.apiBaseUrl || '');
+  const desktopClientToken = typeof runtimeConfig.clientToken === 'string' ? runtimeConfig.clientToken : (state.clientToken || '');
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
   const options = {
@@ -1301,6 +1368,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
 
   const browserWindow = new BrowserWindow(options);
   browserWindow.__ocLabel = label || nextWindowLabel();
+  browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken);
 
   if (useSaved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
     browserWindow.setPosition(saved.x, saved.y);
@@ -1428,8 +1496,9 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
 
   browserWindow.webContents.on('dom-ready', () => {
-    if (state.initScript) {
-      void browserWindow.webContents.executeJavaScript(state.initScript).catch(() => {});
+    const initScript = browserWindow.__ocInitScript || state.initScript;
+    if (initScript) {
+      void browserWindow.webContents.executeJavaScript(initScript).catch(() => {});
     }
   });
 
@@ -1482,7 +1551,7 @@ const activateMainWindow = async (url, localOrigin, bootOutcome, runtimeConfig =
   return state.mainWindow;
 };
 
-const createAdditionalWindow = async (url) => {
+const createAdditionalWindow = async (url, runtimeConfig = {}) => {
   if (!state.localOrigin) {
     return null;
   }
@@ -1490,6 +1559,7 @@ const createAdditionalWindow = async (url) => {
     label: nextWindowLabel(),
     restoreGeometry: false,
     url,
+    runtimeConfig,
   });
   return browserWindow;
 };
@@ -2220,7 +2290,10 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_hosts_get':
-      return readDesktopHostsConfig();
+      return {
+        ...readDesktopHostsConfig(),
+        localOrigin: state.localOrigin || state.sidecarUrl || null,
+      };
 
     case 'desktop_hosts_set': {
       await writeDesktopHostsConfig(args.input || args.config || {});
@@ -2238,7 +2311,14 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_host_probe':
-      return probeHostWithTimeout(String(args.url || ''), 2_000);
+      return probeHostWithTimeout(String(args.url || ''), 2_000, String(args.clientToken || ''));
+
+    case 'desktop_remote_password_login':
+      return loginRemoteAndIssueClientToken({
+        url: args.url,
+        password: args.password,
+        trustDevice: args.trustDevice === true,
+      });
 
     case 'desktop_set_window_theme': {
       const mode = typeof args.themeMode === 'string' ? args.themeMode : '';
@@ -2419,19 +2499,13 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!targetUrl) {
         throw new Error('Invalid URL');
       }
+      const clientToken = typeof args.clientToken === 'string' ? args.clientToken : '';
       let windowUrl = targetUrl;
+      const runtimeConfig = { apiBaseUrl: targetUrl, clientToken };
       if (shouldUsePackagedUi()) {
-        try {
-          const targetOrigin = new URL(targetUrl).origin;
-          const localOrigin = state.localOrigin ? new URL(state.localOrigin).origin : '';
-          const sidecarOrigin = state.sidecarUrl ? new URL(state.sidecarUrl).origin : '';
-          if (targetOrigin === localOrigin || targetOrigin === sidecarOrigin) {
-            windowUrl = buildPackagedUiUrl('/index.html');
-          }
-        } catch {
-        }
+        windowUrl = buildPackagedUiUrl('/index.html');
       }
-      await createAdditionalWindow(windowUrl);
+      await createAdditionalWindow(windowUrl, runtimeConfig);
       return null;
     }
 

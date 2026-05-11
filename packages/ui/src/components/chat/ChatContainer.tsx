@@ -374,6 +374,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 
     // Sessions from sync system
     const sessions = useSessions();
+    const syncStatus = useDirectorySync(React.useCallback((state) => state.status, []));
 
     // Plan detection - watches messages for plan creation and signals store
     usePlanDetection(currentSessionId ?? '');
@@ -727,6 +728,30 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         if (hasRenderableSessionSnapshot) return;
         void ensureSessionRenderable(currentSessionId);
     }, [currentSessionId, ensureSessionRenderable, hasRenderableSessionSnapshot]);
+
+    React.useEffect(() => {
+        if (!currentSessionId || hasRenderableSessionSnapshot) return;
+        if (!sessions.some((session) => session.id === currentSessionId)) return;
+
+        let cancelled = false;
+        let attempts = 0;
+        let timer: number | null = null;
+
+        const run = () => {
+            if (cancelled) return;
+            attempts += 1;
+            void sync.syncSession(currentSessionId, true).finally(() => {
+                if (cancelled || attempts >= 5) return;
+                timer = window.setTimeout(run, 700);
+            });
+        };
+
+        timer = window.setTimeout(run, syncStatus === 'complete' ? 0 : 300);
+        return () => {
+            cancelled = true;
+            if (timer) window.clearTimeout(timer);
+        };
+    }, [currentSessionId, hasRenderableSessionSnapshot, sessions, sync, syncStatus]);
 
 	if (!currentSessionId && !draftOpen) {
 		return (

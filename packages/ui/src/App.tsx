@@ -219,7 +219,8 @@ function App({ apis }: AppProps) {
   }, [apis.runtime.isVSCode]);
 
   React.useEffect(() => {
-    return subscribeRuntimeEndpointChanged(() => {
+    return subscribeRuntimeEndpointChanged((detail) => {
+      useSessionUIStore.getState().prepareForRuntimeSwitch(detail.previousRuntimeKey);
       opencodeClient.reconnectToRuntimeBaseUrl();
       useConfigStore.setState({
         providers: [],
@@ -230,6 +231,7 @@ function App({ apis }: AppProps) {
         lastDisconnectReason: null,
       });
       useProjectsStore.getState().resetForRuntimeSwitch();
+      useSessionUIStore.getState().restoreForRuntimeSwitch(detail.runtimeKey);
       setRuntimeEndpointEpoch((epoch) => epoch + 1);
       setInitRetryExhausted(false);
       setInitRetryEpoch((epoch) => epoch + 1);

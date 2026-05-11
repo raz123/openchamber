@@ -200,6 +200,7 @@ export const settingsDict = {
   'settings.remoteInstances.clientAuth.actions.create': '创建令牌',
   'settings.remoteInstances.clientAuth.actions.pair': '创建链接',
   'settings.remoteInstances.clientAuth.actions.revoke': '撤销',
+  'settings.remoteInstances.clientAuth.actions.clearRevoked': '清除已撤销',
   'settings.remoteInstances.clientAuth.qrAlt': 'OpenChamber connection QR code',
   'settings.remoteInstances.clientAuth.pairingUrl': '连接链接',
   'settings.remoteInstances.clientAuth.createdToken': '请立即复制此令牌。出于安全考虑，它不会再次显示。',

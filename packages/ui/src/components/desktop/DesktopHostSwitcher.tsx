@@ -54,6 +54,11 @@ const LOCAL_HOST_ID = 'local';
 const SSH_CONNECT_TIMEOUT_MS = 90_000;
 const SSH_CONNECT_CANCELLED_ERROR = 'SSH connection cancelled';
 
+const runtimeKeyForHost = (host: DesktopHost): string => {
+  if (host.id === LOCAL_HOST_ID) return 'local';
+  return `host:${host.id}`;
+};
+
 type HostStatus = {
   status: HostProbeResult['status'];
   latencyMs: number;
@@ -215,15 +220,15 @@ const waitForSshReady = async (
   throw new Error('Timed out waiting for SSH connection');
 };
 
-const buildLocalHost = (): DesktopHost => ({
+const buildLocalHost = (localOrigin?: string | null): DesktopHost => ({
   id: LOCAL_HOST_ID,
   label: 'Local',
-  url: getLocalOrigin(),
+  url: localOrigin || getLocalOrigin(),
 });
 
 const resolveCurrentHost = (hosts: DesktopHost[]) => {
   const currentHref = typeof window === 'undefined' ? '' : window.location.href;
-  const localOrigin = getLocalOrigin();
+  const localOrigin = hosts.find((host) => host.id === LOCAL_HOST_ID)?.url || getLocalOrigin();
   const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
   const normalizedLocal = normalizeHostUrl(localOrigin) || localOrigin;
   const normalizedCurrent = normalizeHostUrl(currentHref) || currentHref;
@@ -305,6 +310,7 @@ export function DesktopHostSwitcherDialog({
     error: null,
   });
   const [error, setError] = React.useState<string>('');
+  const [localOrigin, setLocalOrigin] = React.useState<string>(() => getLocalOrigin());
 
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editLabel, setEditLabel] = React.useState('');
@@ -314,13 +320,13 @@ export function DesktopHostSwitcherDialog({
   const sshSwitchTokenRef = React.useRef(0);
 
   const allHosts = React.useMemo(() => {
-    const local = buildLocalHost();
+    const local = buildLocalHost(localOrigin);
     const normalizedRemote = configHosts.map((h) => ({
       ...h,
       url: normalizeHostUrl(h.url) || h.url,
     }));
     return [local, ...normalizedRemote];
-  }, [configHosts]);
+  }, [configHosts, localOrigin]);
 
   React.useEffect(() => {
     return subscribeRuntimeEndpointChanged(() => setRuntimeEndpointEpoch((epoch) => epoch + 1));
@@ -367,6 +373,9 @@ export function DesktopHostSwitcherDialog({
         desktopSshInstancesGet().catch(() => ({ instances: [] })),
         getSshStatusById(),
       ]);
+      if (cfg.localOrigin) {
+        setLocalOrigin(cfg.localOrigin);
+      }
       const nextSshHostIds: Record<string, true> = {};
       for (const instance of sshCfg.instances) {
         nextSshHostIds[instance.id] = true;
@@ -396,7 +405,7 @@ export function DesktopHostSwitcherDialog({
           if (!url) {
             return [h.id, { status: 'unreachable' as const, latencyMs: 0 } satisfies HostStatus] as const;
           }
-          const res = await desktopHostProbe(url).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+          const res = await desktopHostProbe(url, { clientToken: h.clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
           return [h.id, { status: res.status, latencyMs: res.latencyMs } satisfies HostStatus] as const;
         })
       );
@@ -455,14 +464,14 @@ export function DesktopHostSwitcherDialog({
   }, [open]);
 
   const handleSwitch = React.useCallback(async (host: DesktopHost) => {
-    const origin = host.id === LOCAL_HOST_ID ? getLocalOrigin() : (normalizeHostUrl(host.url) || '');
-    const apiOrigin = host.id === LOCAL_HOST_ID ? getLocalOrigin() : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
+    const origin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(host.url) || '');
+    const apiOrigin = host.id === LOCAL_HOST_ID ? localOrigin : (normalizeHostUrl(getDesktopHostApiUrl(host)) || '');
     if (!origin) return;
 
     if (isElectronShell()) {
       if (!apiOrigin) return;
       setSwitchingHostId(host.id);
-      const probe = await desktopHostProbe(apiOrigin).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+      const probe = await desktopHostProbe(apiOrigin, { clientToken: host.clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
       setStatusById((prev) => ({
         ...prev,
         [host.id]: { status: probe.status, latencyMs: probe.latencyMs },
@@ -474,7 +483,7 @@ export function DesktopHostSwitcherDialog({
         return;
       }
 
-      switchRuntimeEndpoint({ apiBaseUrl: apiOrigin, clientToken: host.clientToken || null });
+      switchRuntimeEndpoint({ apiBaseUrl: apiOrigin, clientToken: host.clientToken || null, runtimeKey: runtimeKeyForHost(host) });
       onHostSwitched?.();
       setSwitchingHostId(null);
       return;
@@ -568,7 +577,7 @@ export function DesktopHostSwitcherDialog({
 
     if (host.id !== LOCAL_HOST_ID && isTauriShell()) {
       setSwitchingHostId(host.id);
-      const probe = await desktopHostProbe(origin).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+      const probe = await desktopHostProbe(origin, { clientToken: host.clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
       setStatusById((prev) => ({
         ...prev,
         [host.id]: { status: probe.status, latencyMs: probe.latencyMs },
@@ -589,7 +598,7 @@ export function DesktopHostSwitcherDialog({
     } catch {
       window.location.href = target;
     }
-  }, [onHostSwitched, sshHostIds, sshStatusesById, t]);
+  }, [localOrigin, onHostSwitched, sshHostIds, sshStatusesById, t]);
 
   const cancelEdit = React.useCallback(() => {
     setEditingId(null);
@@ -626,15 +635,15 @@ export function DesktopHostSwitcherDialog({
   }, [configHosts, persist]);
 
   const openInNewWindow = React.useCallback((host: DesktopHost) => {
-    const origin = host.id === LOCAL_HOST_ID ? getLocalOrigin() : (normalizeHostUrl(host.url) || '');
+    const origin = host.id === LOCAL_HOST_ID ? localOrigin : getDesktopHostApiUrl(host);
     if (!origin) return;
     const target = toNavigationUrl(origin);
-    desktopOpenNewWindowAtUrl(target).catch((err: unknown) => {
+    desktopOpenNewWindowAtUrl(target, { clientToken: host.clientToken || null }).catch((err: unknown) => {
       toast.error(t('desktopHostSwitcher.error.failedToOpenNewWindow'), {
         description: err instanceof Error ? err.message : String(err),
       });
     });
-  }, [t]);
+  }, [localOrigin, t]);
 
   const switchToLocal = React.useCallback(() => {
     sshSwitchTokenRef.current += 1;
@@ -647,15 +656,15 @@ export function DesktopHostSwitcherDialog({
       detail: null,
       phase: 'idle',
     }));
-    const localTarget = toNavigationUrl(getLocalOrigin());
+    const localTarget = toNavigationUrl(localOrigin);
     if (isElectronShell()) {
-      switchRuntimeEndpoint({ apiBaseUrl: getLocalOrigin(), clientToken: null });
+      switchRuntimeEndpoint({ apiBaseUrl: localOrigin, clientToken: null, runtimeKey: 'local' });
       onHostSwitched?.();
       return;
     }
     onHostSwitched?.();
     window.location.assign(localTarget);
-  }, [onHostSwitched]);
+  }, [localOrigin, onHostSwitched]);
 
   const cancelSshSwitch = React.useCallback(async () => {
     const hostId = sshSwitchModal.hostId || switchingHostId;
@@ -811,7 +820,7 @@ export function DesktopHostSwitcherDialog({
                 const sshStatus = sshStatusesById[host.id] || null;
                 const statusKind = isSsh ? sshPhaseToHostStatus(sshStatus?.phase) : (status?.status ?? null);
                 const isEditing = editingId === host.id;
-                const effectiveUrl = isLocal ? getLocalOrigin() : (normalizeHostUrl(host.url) || host.url);
+                const effectiveUrl = isLocal ? localOrigin : (normalizeHostUrl(host.url) || host.url);
                 const displayLabel = host.id === LOCAL_HOST_ID
                   ? t('desktopHostSwitcher.instance.local')
                   : redactSensitiveUrl(host.label);
@@ -1093,6 +1102,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
   const [open, setOpen] = React.useState(false);
   const [label, setLabel] = React.useState('Local');
   const [status, setStatus] = React.useState<HostProbeResult['status'] | null>(null);
+  const [localOrigin, setLocalOrigin] = React.useState<string>(() => getLocalOrigin());
   const attemptedDefaultSshConnectRef = React.useRef(false);
   const [startupSshModal, setStartupSshModal] = React.useState<{
     open: boolean;
@@ -1132,7 +1142,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
         throw new Error('Connected but missing forwarded URL');
       }
       if (isElectronShell()) {
-        switchRuntimeEndpoint({ apiBaseUrl: localUrl, clientToken: null });
+        switchRuntimeEndpoint({ apiBaseUrl: localUrl, clientToken: null, runtimeKey: `ssh:${hostId}` });
       } else {
         window.location.assign(toNavigationUrl(localUrl));
       }
@@ -1160,15 +1170,18 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
     });
 
     await desktopHostsGet()
-      .then((cfg) => desktopHostsSet({ hosts: cfg.hosts, defaultHostId: LOCAL_HOST_ID }))
+      .then((cfg) => {
+        if (cfg.localOrigin) setLocalOrigin(cfg.localOrigin);
+        return desktopHostsSet({ hosts: cfg.hosts, defaultHostId: LOCAL_HOST_ID });
+      })
       .catch(() => undefined);
 
     if (isElectronShell()) {
-      switchRuntimeEndpoint({ apiBaseUrl: getLocalOrigin(), clientToken: null });
+      switchRuntimeEndpoint({ apiBaseUrl: localOrigin, clientToken: null, runtimeKey: 'local' });
     } else {
-      window.location.assign(toNavigationUrl(getLocalOrigin()));
+      window.location.assign(toNavigationUrl(localOrigin));
     }
-  }, []);
+  }, [localOrigin]);
 
   const retryStartupSsh = React.useCallback(() => {
     const hostId = startupSshModal.hostId;
@@ -1185,7 +1198,11 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
     const run = async () => {
       try {
         const cfg = await desktopHostsGet();
-        const local = buildLocalHost();
+        const nextLocalOrigin = cfg.localOrigin || localOrigin;
+        if (cfg.localOrigin && cfg.localOrigin !== localOrigin) {
+          setLocalOrigin(cfg.localOrigin);
+        }
+        const local = buildLocalHost(nextLocalOrigin);
         const all = [local, ...(cfg.hosts || [])];
         const current = resolveCurrentHost(all);
 
@@ -1240,7 +1257,7 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [connectDefaultSshInstance, t]);
+  }, [connectDefaultSshInstance, localOrigin, t]);
 
   if (!isDesktopShell()) {
     return null;
@@ -1248,8 +1265,8 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
 
   const runtimeApiBaseUrl = getRuntimeApiBaseUrl();
   const isCurrentlyLocal = runtimeApiBaseUrl
-    ? locationMatchesHost(runtimeApiBaseUrl, getLocalOrigin())
-    : locationMatchesHost(window.location.href, getLocalOrigin());
+    ? locationMatchesHost(runtimeApiBaseUrl, localOrigin)
+    : locationMatchesHost(window.location.href, localOrigin);
 
   const fallbackLabel = typeof window !== 'undefined' && window.location.hostname
     ? window.location.hostname

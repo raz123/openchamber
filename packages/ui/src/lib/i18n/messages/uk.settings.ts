@@ -200,6 +200,7 @@ export const settingsDict = {
   "settings.remoteInstances.clientAuth.actions.create": "Створити токен",
   "settings.remoteInstances.clientAuth.actions.pair": "Створити посилання",
   "settings.remoteInstances.clientAuth.actions.revoke": "Відкликати",
+  "settings.remoteInstances.clientAuth.actions.clearRevoked": "Очистити відкликані",
   "settings.remoteInstances.clientAuth.qrAlt": "QR-код підключення OpenChamber",
   "settings.remoteInstances.clientAuth.pairingUrl": "Посилання для підключення",
   "settings.remoteInstances.clientAuth.createdToken": "Скопіюйте цей токен зараз. З міркувань безпеки він більше не показуватиметься.",

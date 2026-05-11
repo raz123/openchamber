@@ -1036,9 +1036,14 @@ export interface RemoteClientRevokeResult {
   client?: RemoteClientRecord;
 }
 
+export interface RemoteClientPurgeRevokedResult {
+  purged: number;
+}
+
 export interface ClientAuthAPI {
   listClients(): Promise<RemoteClientRecord[]>;
   createClient(input?: { label?: string }): Promise<RemoteClientCreateResult>;
+  purgeRevokedClients(): Promise<RemoteClientPurgeRevokedResult>;
   revokeClient(id: string): Promise<RemoteClientRevokeResult>;
 }
 

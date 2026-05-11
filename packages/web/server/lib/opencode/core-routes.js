@@ -432,6 +432,13 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     });
   });
 
+  app.delete('/api/client-auth/clients', async (req, res, next) => {
+    await runWithUiAuth(req, res, next, async () => {
+      const result = await remoteClientAuthRuntime.purgeRevokedClients();
+      res.json(result);
+    });
+  });
+
   app.get('/connect', async (req, res) => {
     try {
       const token = typeof req.query?.t === 'string' ? req.query.t : '';

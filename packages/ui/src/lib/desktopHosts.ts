@@ -23,6 +23,7 @@ export type DesktopHostsConfig = {
   hosts: DesktopHost[];
   defaultHostId: string | null;
   initialHostChoiceCompleted: boolean;
+  localOrigin?: string | null;
 };
 
 /** Backward-compatible input type — callers may omit `initialHostChoiceCompleted`. */
@@ -172,8 +173,9 @@ export const desktopHostsGet = async (): Promise<DesktopHostsConfig> => {
 
   const initialHostChoiceCompleted =
     raw.initialHostChoiceCompleted === true || raw.initial_host_choice_completed === true;
+  const localOrigin = readString(raw, 'localOrigin') || readString(raw, 'local_origin');
 
-  return { hosts, defaultHostId, initialHostChoiceCompleted };
+  return { hosts, defaultHostId, initialHostChoiceCompleted, localOrigin };
 };
 
 export const desktopHostsSet = async (config: DesktopHostsConfigInput): Promise<void> => {
@@ -188,13 +190,13 @@ export const desktopHostsSet = async (config: DesktopHostsConfigInput): Promise<
   });
 };
 
-export const desktopHostProbe = async (url: string): Promise<HostProbeResult> => {
+export const desktopHostProbe = async (url: string, options?: { clientToken?: string | null }): Promise<HostProbeResult> => {
   const invoke = getInvoke();
   if (!invoke) {
     return { status: 'unreachable', latencyMs: 0 };
   }
 
-  const raw = await invoke('desktop_host_probe', { url });
+  const raw = await invoke('desktop_host_probe', { url, clientToken: options?.clientToken || undefined });
   if (!isRecord(raw)) {
     return { status: 'unreachable', latencyMs: 0 };
   }
@@ -209,8 +211,8 @@ export const desktopHostProbe = async (url: string): Promise<HostProbeResult> =>
   return { status, latencyMs };
 };
 
-export const desktopOpenNewWindowAtUrl = async (url: string): Promise<void> => {
+export const desktopOpenNewWindowAtUrl = async (url: string, options?: { clientToken?: string | null }): Promise<void> => {
   const invoke = getInvoke();
   if (!invoke) return;
-  await invoke('desktop_new_window_at_url', { url });
+  await invoke('desktop_new_window_at_url', { url, clientToken: options?.clientToken || undefined });
 };

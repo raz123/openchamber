@@ -1092,10 +1092,11 @@ async function main(options = {}) {
 
   const app = express();
   const serverStartedAt = new Date().toISOString();
+  const packagedClientOrigins = new Set(['openchamber-ui://app']);
   app.set('trust proxy', true);
   app.use((req, res, next) => {
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
-    if ((process.env.OPENCHAMBER_RUNTIME || '') === 'desktop' && origin === 'openchamber-ui://app') {
+    if (packagedClientOrigins.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');

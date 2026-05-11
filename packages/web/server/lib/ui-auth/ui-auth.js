@@ -632,7 +632,15 @@ export const createUiAuth = ({
     await issueSession(req, res, {
       trustDevice: isTrustedDeviceRequest(req.body?.trustDevice),
     });
-    res.json({ authenticated: true });
+    let clientTokenResult = null;
+    if (req.body?.issueClientToken === true && typeof clientAuthController?.createClient === 'function') {
+      clientTokenResult = await clientAuthController.createClient({ label: req.body?.clientLabel });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      authenticated: true,
+      ...(clientTokenResult?.token ? { clientToken: clientTokenResult.token, client: clientTokenResult.client } : {}),
+    });
   };
 
   const respondPasskeyError = (res, error) => {
