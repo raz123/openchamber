@@ -230,6 +230,35 @@ const DATE_FORMATTER = new Intl.DateTimeFormat('en-US', {
 
 const ADD_PROVIDER_ID = '__add_provider__';
 
+const IconBadge: React.FC<{ iconName: IconComponent; label: string }> = ({ iconName, label }) => (
+    <span
+        className="flex size-5 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
+        title={label}
+        aria-label={label}
+        role="img"
+    >
+        <Icon name={iconName} className="size-3.5" />
+    </span>
+);
+
+const EditModeIcon: React.FC<{ mode: EditPermissionMode; className?: string }> = ({ mode, className }) => {
+    const combinedClassName = cn(className, 'flex-shrink-0');
+    const modeColors = getEditModeColors(mode);
+    const iconColor = modeColors ? modeColors.text : 'var(--foreground)';
+    const iconStyle = { color: iconColor };
+
+    if (mode === 'full') {
+        return <Icon name="pencil-ai" className={combinedClassName} style={iconStyle} />;
+    }
+    if (mode === 'allow') {
+        return <Icon name="checkbox-circle" className={combinedClassName} style={iconStyle} />;
+    }
+    if (mode === 'deny') {
+        return <Icon name="close-circle" className={combinedClassName} style={iconStyle} />;
+    }
+    return <Icon name="question" className={combinedClassName} style={iconStyle} />;
+};
+
 const formatTokens = (value?: number | null) => {
     if (typeof value !== 'number' || Number.isNaN(value)) {
         return '—';
@@ -561,27 +590,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const sizeVariant: 'mobile' | 'vscode' | 'default' = isMobile ? 'mobile' : isVSCodeRuntime ? 'vscode' : 'default';
     const buttonHeight = sizeVariant === 'mobile' ? 'h-9' : sizeVariant === 'vscode' ? 'h-6' : 'h-8';
-    const editToggleIconClass = sizeVariant === 'mobile' ? 'size-5' : sizeVariant === 'vscode' ? 'size-4' : 'size-4';
     const controlIconSize = sizeVariant === 'mobile' ? 'size-5' : sizeVariant === 'vscode' ? 'size-4' : 'size-4';
     const controlTextSize = isCompact ? 'typography-micro' : 'typography-meta';
     const inlineGapClass = sizeVariant === 'mobile' ? 'gap-x-1' : sizeVariant === 'vscode' ? 'gap-x-2' : 'gap-x-3';
-    const EditModeIcon: React.FC<{ mode: EditPermissionMode; className?: string }> = ({ mode, className }) => {
-        const combinedClassName = cn(className ?? editToggleIconClass, 'flex-shrink-0');
-        const modeColors = getEditModeColors(mode);
-        const iconColor = modeColors ? modeColors.text : 'var(--foreground)';
-        const iconStyle = { color: iconColor };
-
-        if (mode === 'full') {
-            return <Icon name="pencil-ai" className={combinedClassName} style={iconStyle} />;
-        }
-        if (mode === 'allow') {
-            return <Icon name="checkbox-circle" className={combinedClassName} style={iconStyle} />;
-        }
-        if (mode === 'deny') {
-            return <Icon name="close-circle" className={combinedClassName} style={iconStyle} />;
-        }
-        return <Icon name="question" className={combinedClassName} style={iconStyle} />;
-    };
 
     const currentProvider = getCurrentProvider();
     const models = Array.isArray(currentProvider?.models) ? currentProvider.models : [];
@@ -1361,17 +1372,6 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const capitalizeAgentName = (name: string) => {
         return name.charAt(0).toUpperCase() + name.slice(1);
     };
-
-    const IconBadge: React.FC<{ iconName: IconComponent; label: string }> = ({ iconName, label }) => (
-        <span
-            className="flex size-5 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground"
-            title={label}
-            aria-label={label}
-            role="img"
-        >
-            <Icon name={iconName} className="size-3.5" />
-        </span>
-    );
 
     const toggleMobileProviderExpansion = React.useCallback((providerId: string) => {
         setExpandedMobileProviders((prev) => {
