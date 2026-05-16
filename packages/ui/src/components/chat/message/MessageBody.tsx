@@ -1009,6 +1009,7 @@ const AssistantMessageBody = React.memo(({
     const [isPlanDialogOpen, setIsPlanDialogOpen] = React.useState(false);
     const [isSavingPlan, setIsSavingPlan] = React.useState(false);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
+    const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
     const groupReasoningBlocks = useUIStore((state) => state.groupReasoningBlocks);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
     const isSortedRenderMode = chatRenderMode === 'sorted';
@@ -1557,7 +1558,20 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
                 if (showReasoningTraces) {
-                    if (groupReasoningBlocks) {
+                    if (!collapsibleThinkingBlocks) {
+                        // Non-collapsible mode: render thinking blocks as plain text inline.
+                        rendered.push(
+                            <AssistantTextPart
+                                key={`reasoning-${messageId}-${i}`}
+                                part={part}
+                                sessionId={sessionId}
+                                messageId={messageId}
+                                streamPhase={streamPhase}
+                                chatRenderMode={chatRenderMode}
+                                onContentChange={onContentChange}
+                            />
+                        );
+                    } else if (groupReasoningBlocks) {
                         // Merged mode (VSCode pattern): one block for all reasoning parts.
                         if (!reasoningMergeRendered) {
                             reasoningMergeRendered = true;
@@ -1668,6 +1682,7 @@ const AssistantMessageBody = React.memo(({
         animatedToolIdsLookup,
         animateActivityRows,
         chatRenderMode,
+        collapsibleThinkingBlocks,
         groupReasoningBlocks,
         collapsedPreviewCount,
         expandedTools,
