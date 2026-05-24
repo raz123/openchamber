@@ -55,11 +55,11 @@ export const useProjectRepoStatus = (args: Args): void => {
       .join('|');
   }, [normalizedProjects, gitRepoStatus]);
 
-  // Tracks the input branch we last resolved a root branch against, per project.
+  // Tracks the project path + input branch we last resolved against, per project.
   // Used to resolve `getRootBranch` only for projects that are new or whose
-  // branch actually changed — rather than re-resolving every project whenever
+  // input actually changed — rather than re-resolving every project whenever
   // any single project's branch settles (the old N² cascade).
-  const resolvedInputByProjectId = React.useRef<Map<string, string>>(new Map());
+  const resolvedInputKeyByProjectId = React.useRef<Map<string, string>>(new Map());
 
   React.useEffect(() => {
     let cancelled = false;
@@ -70,16 +70,25 @@ export const useProjectRepoStatus = (args: Args): void => {
       const run = async () => {
         const validIds = new Set(normalizedProjects.map((project) => project.id));
         // Drop bookkeeping for projects that are no longer present.
-        for (const id of resolvedInputByProjectId.current.keys()) {
+        for (const id of resolvedInputKeyByProjectId.current.keys()) {
           if (!validIds.has(id)) {
-            resolvedInputByProjectId.current.delete(id);
+            resolvedInputKeyByProjectId.current.delete(id);
           }
         }
 
         const pending = normalizedProjects.filter((project) => {
-          const currentBranch = gitRepoStatus.get(project.normalizedPath)?.branch ?? '';
-          const lastBranch = resolvedInputByProjectId.current.get(project.id);
-          return lastBranch === undefined || lastBranch !== currentBranch;
+          const status = gitRepoStatus.get(project.normalizedPath);
+          if (status?.isGitRepo === false) {
+            resolvedInputKeyByProjectId.current.delete(project.id);
+            return false;
+          }
+          if (status?.isGitRepo !== true || status.branch === null) {
+            return false;
+          }
+          const currentBranch = status.branch.trim();
+          const currentInputKey = `${project.normalizedPath}\0${currentBranch}`;
+          const lastInputKey = resolvedInputKeyByProjectId.current.get(project.id);
+          return lastInputKey === undefined || lastInputKey !== currentInputKey;
         });
 
         if (pending.length === 0) {
@@ -87,12 +96,13 @@ export const useProjectRepoStatus = (args: Args): void => {
         }
 
         const entries = await mapWithConcurrency(pending, 2, async (project) => {
-          const inputBranch = gitRepoStatus.get(project.normalizedPath)?.branch ?? '';
+          const inputBranch = gitRepoStatus.get(project.normalizedPath)?.branch?.trim() ?? '';
+          const inputKey = `${project.normalizedPath}\0${inputBranch}`;
           const branch = await getRootBranch(
             project.normalizedPath,
             inputBranch ? { knownBranch: inputBranch } : undefined,
           ).catch(() => null);
-          return { id: project.id, inputBranch, branch };
+          return { id: project.id, inputKey, branch };
         });
         if (cancelled) {
           return;
@@ -112,8 +122,8 @@ export const useProjectRepoStatus = (args: Args): void => {
           });
           return next;
         });
-        resolved.forEach(({ id, inputBranch }) => {
-          resolvedInputByProjectId.current.set(id, inputBranch);
+        resolved.forEach(({ id, inputKey }) => {
+          resolvedInputKeyByProjectId.current.set(id, inputKey);
         });
       };
       void run();

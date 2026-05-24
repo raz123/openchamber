@@ -125,6 +125,24 @@ describe('worktreeStatus.getRootBranch', () => {
     expect(execCalls.length).toBe(2);
   });
 
+  test('bounds the root cache by evicting the least-recently-used entry past the count cap', async () => {
+    execImpl = (_command, cwd) => revParse(`${cwd}/.git`, '.git');
+    statusImpl = () => ({ current: 'main' });
+
+    for (let i = 0; i < 500; i += 1) {
+      await getRootBranch(`/repo-${i}`);
+    }
+    const afterFill = execCalls.length;
+    expect(afterFill).toBe(500);
+
+    await getRootBranch('/repo-overflow');
+    await getRootBranch('/repo-0');
+    await getRootBranch('/repo-499');
+
+    // /repo-overflow and evicted /repo-0 re-run; /repo-499 remains cached.
+    expect(execCalls.length).toBe(afterFill + 2);
+  });
+
   test('uses knownBranch fast-path when the directory is its own root', async () => {
     execImpl = () => revParse('/repo/.git', '.git');
 

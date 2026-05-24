@@ -63,11 +63,37 @@ export async function getWorktreeStatus(worktreePath: string): Promise<WorktreeM
 // app is open. Caching it (with in-flight dedupe) collapses what used to be an
 // N² burst of `/api/fs/exec` calls into roughly one resolution per directory.
 const RESOLVED_ROOT_TTL_MS = 60_000;
+const RESOLVED_ROOT_CACHE_MAX_ENTRIES = 500;
+const RESOLVED_ROOT_CACHE_MAX_BYTES = 1024 * 1024;
 const resolvedRootCache = new Map<string, { root: string; resolvedAt: number }>();
 const inFlightRootResolves = new Map<string, Promise<string>>();
 // Bumped on every invalidation so a resolution that was already in flight when
 // the cache was invalidated does not write its now-stale result back.
 let resolveCacheEpoch = 0;
+
+const resolvedRootEntryBytes = (directory: string, root: string): number => directory.length + root.length;
+
+const setResolvedRootCacheEntry = (directory: string, root: string): void => {
+  resolvedRootCache.delete(directory);
+  resolvedRootCache.set(directory, { root, resolvedAt: Date.now() });
+
+  let totalBytes = 0;
+  for (const [key, entry] of resolvedRootCache) {
+    totalBytes += resolvedRootEntryBytes(key, entry.root);
+  }
+
+  while (
+    resolvedRootCache.size > RESOLVED_ROOT_CACHE_MAX_ENTRIES ||
+    (totalBytes > RESOLVED_ROOT_CACHE_MAX_BYTES && resolvedRootCache.size > 1)
+  ) {
+    const oldest = resolvedRootCache.entries().next().value;
+    if (!oldest) {
+      break;
+    }
+    totalBytes -= resolvedRootEntryBytes(oldest[0], oldest[1].root);
+    resolvedRootCache.delete(oldest[0]);
+  }
+};
 
 /**
  * Invalidate cached project-root resolutions. Call this when the worktree
@@ -129,7 +155,13 @@ const computeProjectRoot = async (directory: string): Promise<string> => {
 const resolveProjectRoot = async (directory: string): Promise<string> => {
   const cached = resolvedRootCache.get(directory);
   if (cached && Date.now() - cached.resolvedAt < RESOLVED_ROOT_TTL_MS) {
+    // Refresh recency without extending TTL.
+    resolvedRootCache.delete(directory);
+    resolvedRootCache.set(directory, cached);
     return cached.root;
+  }
+  if (cached) {
+    resolvedRootCache.delete(directory);
   }
 
   const inflight = inFlightRootResolves.get(directory);
@@ -142,7 +174,7 @@ const resolveProjectRoot = async (directory: string): Promise<string> => {
     .then((root) => {
       // Skip the write-back if the cache was invalidated while we resolved.
       if (resolveCacheEpoch === startEpoch) {
-        resolvedRootCache.set(directory, { root, resolvedAt: Date.now() });
+        setResolvedRootCacheEntry(directory, root);
       }
       return root;
     })
