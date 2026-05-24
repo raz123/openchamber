@@ -65,6 +65,9 @@ export async function getWorktreeStatus(worktreePath: string): Promise<WorktreeM
 const RESOLVED_ROOT_TTL_MS = 60_000;
 const resolvedRootCache = new Map<string, { root: string; resolvedAt: number }>();
 const inFlightRootResolves = new Map<string, Promise<string>>();
+// Bumped on every invalidation so a resolution that was already in flight when
+// the cache was invalidated does not write its now-stale result back.
+let resolveCacheEpoch = 0;
 
 /**
  * Invalidate cached project-root resolutions. Call this when the worktree
@@ -73,11 +76,19 @@ const inFlightRootResolves = new Map<string, Promise<string>>();
  * cache is cleared.
  */
 export function invalidateResolvedProjectRootCache(directory?: string): void {
+  // Bumping the epoch prevents any in-flight resolution from re-seeding the
+  // cache with its pre-invalidation result once it settles.
+  resolveCacheEpoch += 1;
   if (typeof directory === 'string' && directory) {
-    resolvedRootCache.delete(normalizePath(directory));
+    const normalized = normalizePath(directory);
+    resolvedRootCache.delete(normalized);
+    // Drop the in-flight entry too, so callers arriving during the window
+    // trigger a fresh resolution instead of receiving the stale in-flight one.
+    inFlightRootResolves.delete(normalized);
     return;
   }
   resolvedRootCache.clear();
+  inFlightRootResolves.clear();
 }
 
 const computeProjectRoot = async (directory: string): Promise<string> => {
@@ -126,9 +137,13 @@ const resolveProjectRoot = async (directory: string): Promise<string> => {
     return inflight;
   }
 
+  const startEpoch = resolveCacheEpoch;
   const promise = computeProjectRoot(directory)
     .then((root) => {
-      resolvedRootCache.set(directory, { root, resolvedAt: Date.now() });
+      // Skip the write-back if the cache was invalidated while we resolved.
+      if (resolveCacheEpoch === startEpoch) {
+        resolvedRootCache.set(directory, { root, resolvedAt: Date.now() });
+      }
       return root;
     })
     .catch(() => directory)

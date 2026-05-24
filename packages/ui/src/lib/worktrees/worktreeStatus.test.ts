@@ -5,7 +5,7 @@ type ExecResult = { command: string; success: boolean; stdout?: string };
 // Per-test controllable behaviour plus manual call tracking (the project's
 // tsconfig does not load bun-test's mock matcher types, so existing tests track
 // calls via plain arrays rather than `toHaveBeenCalled*`).
-let execImpl: (command: string, cwd: string) => ExecResult = () => ({ command: '', success: false });
+let execImpl: (command: string, cwd: string) => ExecResult | Promise<ExecResult> = () => ({ command: '', success: false });
 let statusImpl: (directory: string) => { current: string } = () => ({ current: 'HEAD' });
 
 const execCalls: Array<{ command: string; cwd: string }> = [];
@@ -100,6 +100,29 @@ describe('worktreeStatus.getRootBranch', () => {
     // knownBranch is the *worktree* branch, which must NOT be returned for the root.
     expect(await getRootBranch('/repo-wt', { knownBranch: 'feature/x' })).toBe('main');
     expect(statusCalls).toEqual(['/repo']);
+  });
+
+  test('invalidation mid-flight does not let a stale resolve re-seed the cache', async () => {
+    let releaseExec: (result: ExecResult) => void = () => {};
+    execImpl = () =>
+      new Promise<ExecResult>((resolve) => {
+        releaseExec = resolve;
+      });
+    statusImpl = () => ({ current: 'main' });
+
+    // Start a resolution and leave it in flight.
+    const pending = getRootBranch('/repo');
+    // A worktree topology change invalidates the cache while the resolve runs.
+    invalidateResolvedProjectRootCache();
+    // Now let the original resolve settle — it must NOT populate the cache.
+    releaseExec(revParse('/repo/.git', '.git'));
+    await pending;
+
+    execImpl = () => revParse('/repo/.git', '.git');
+    await getRootBranch('/repo');
+
+    // Second call recomputes because the stale in-flight result was discarded.
+    expect(execCalls.length).toBe(2);
   });
 
   test('uses knownBranch fast-path when the directory is its own root', async () => {
