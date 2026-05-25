@@ -21,7 +21,15 @@ const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
 const DEEP_LINK_PROTOCOL = 'openchamber';
 const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
 const BACKGROUND_START_ARG = '--background';
-const isBackgroundStart = process.argv.includes(BACKGROUND_START_ARG);
+const wasOpenedAtLogin = (() => {
+  if (process.platform !== 'darwin') return false;
+  try {
+    return app.getLoginItemSettings().wasOpenedAtLogin === true;
+  } catch {
+    return false;
+  }
+})();
+const isBackgroundStart = process.argv.includes(BACKGROUND_START_ARG) || wasOpenedAtLogin;
 
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
