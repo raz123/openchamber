@@ -1271,7 +1271,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const desktopLocalOrigin = state.localOrigin || '';
   const desktopHome = os.homedir() || '';
   const desktopMacosMajor = String(macosMajorVersion());
-  const usesCustomTitleBar = process.platform === 'darwin';
+  const usesCustomTitleBar = process.platform === 'darwin' || process.platform === 'win32';
   const titleBarOverlayEnabled = false;
   const autoHidesNativeMenuBar = process.platform !== 'darwin';
   const options = {
@@ -1285,6 +1285,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     minHeight: MIN_WINDOW_HEIGHT,
     show: false,
     backgroundColor: '#151313',
+    frame: process.platform === 'win32' ? false : undefined,
     autoHideMenuBar: autoHidesNativeMenuBar,
     // Tauri used an overlay title bar with explicit traffic-light placement.
     // Electron's hiddenInset adds its own extra inset, which leaves the controls
@@ -1352,6 +1353,14 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
 
   browserWindow.on('resize', () => {
     emitToWindow(browserWindow, 'openchamber:window-resized');
+    debounceWindowStatePersist(browserWindow, false);
+  });
+  browserWindow.on('maximize', () => {
+    emitToWindow(browserWindow, 'openchamber:window-maximized-changed', { maximized: true });
+    debounceWindowStatePersist(browserWindow, false);
+  });
+  browserWindow.on('unmaximize', () => {
+    emitToWindow(browserWindow, 'openchamber:window-maximized-changed', { maximized: false });
     debounceWindowStatePersist(browserWindow, false);
   });
   browserWindow.on('move', () => {
@@ -2742,6 +2751,26 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
       return null;
 
+    case 'desktop_minimize_current_window':
+      if (browserWindow && !browserWindow.isDestroyed()) {
+        browserWindow.minimize();
+      }
+      return null;
+
+    case 'desktop_toggle_current_window_maximized':
+      if (browserWindow && !browserWindow.isDestroyed()) {
+        if (browserWindow.isMaximized()) {
+          browserWindow.unmaximize();
+        } else {
+          browserWindow.maximize();
+        }
+        return { maximized: browserWindow.isMaximized() };
+      }
+      return { maximized: false };
+
+    case 'desktop_get_current_window_state':
+      return { maximized: Boolean(browserWindow && !browserWindow.isDestroyed() && browserWindow.isMaximized()) };
+
     case 'desktop_ssh_instances_get':
       return sshManager.readInstances();
 
@@ -3004,6 +3033,10 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
   'desktop_set_window_theme',
   'desktop_is_window_fullscreen',
   'desktop_start_window_drag',
+  'desktop_minimize_current_window',
+  'desktop_toggle_current_window_maximized',
+  'desktop_close_current_window',
+  'desktop_get_current_window_state',
   'desktop_get_app_version',
   'desktop_get_lan_address',
   'desktop_capture_page_rect',
