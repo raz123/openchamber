@@ -226,6 +226,13 @@ export const desktopHostsSet = async (config: DesktopHostsConfigInput): Promise<
   });
 };
 
+export const desktopLocalClientTokenGet = async (): Promise<string> => {
+  const invoke = getInvoke();
+  if (!invoke) return '';
+  const raw = await invoke('desktop_local_client_token_get').catch(() => null);
+  return typeof raw === 'string' ? raw.trim() : '';
+};
+
 export const desktopHostProbe = async (url: string, options?: { clientToken?: string | null }): Promise<HostProbeResult> => {
   const invoke = getInvoke();
   if (!invoke) {

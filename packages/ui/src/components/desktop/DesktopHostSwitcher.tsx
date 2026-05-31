@@ -19,6 +19,7 @@ import {
   desktopHostProbe,
   desktopHostsGet,
   desktopHostsSet,
+  desktopLocalClientTokenGet,
   desktopOpenNewWindowAtUrl,
   getDesktopHostApiUrl,
   locationMatchesHost,
@@ -73,6 +74,11 @@ const toNavigationUrl = (rawUrl: string): string => {
 const getLocalOrigin = (): string => {
   if (typeof window === 'undefined') return '';
   return window.__OPENCHAMBER_LOCAL_ORIGIN__ || window.location.origin;
+};
+
+const getLocalClientToken = async (): Promise<string> => {
+  if (!isElectronShell()) return '';
+  return desktopLocalClientTokenGet().catch(() => '');
 };
 
 const statusDotClass = (status: HostDisplayStatus): string => {
@@ -410,13 +416,15 @@ export function DesktopHostSwitcherDialog({
     }
     setProbingHostIds(nextProbingHostIds);
     try {
+      const localClientToken = await getLocalClientToken();
       const results = await Promise.all(
         hosts.map(async (h) => {
           const url = normalizeHostUrl(isElectronShell() ? getDesktopHostApiUrl(h) : h.url);
           if (!url) {
             return [h.id, { status: 'unreachable' as const, latencyMs: 0 } satisfies HostStatus] as const;
           }
-          const res = await desktopHostProbe(url, { clientToken: h.clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+          const clientToken = h.id === LOCAL_HOST_ID ? localClientToken : (h.clientToken || '');
+          const res = await desktopHostProbe(url, { clientToken: clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
           return [h.id, { status: res.status, latencyMs: res.latencyMs } satisfies HostStatus] as const;
         })
       );
@@ -483,7 +491,8 @@ export function DesktopHostSwitcherDialog({
     if (isElectronShell()) {
       if (!apiOrigin) return;
       setSwitchingHostId(host.id);
-      const probe = await desktopHostProbe(apiOrigin, { clientToken: host.clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
+      const clientToken = host.id === LOCAL_HOST_ID ? await getLocalClientToken() : (host.clientToken || '');
+      const probe = await desktopHostProbe(apiOrigin, { clientToken: clientToken || null }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
       setStatusById((prev) => ({
         ...prev,
         [host.id]: { status: probe.status, latencyMs: probe.latencyMs },
@@ -495,7 +504,7 @@ export function DesktopHostSwitcherDialog({
         return;
       }
 
-      switchRuntimeEndpoint({ apiBaseUrl: apiOrigin, clientToken: host.clientToken || null, runtimeKey: runtimeKeyForHost(host) });
+      switchRuntimeEndpoint({ apiBaseUrl: apiOrigin, clientToken: clientToken || null, runtimeKey: runtimeKeyForHost(host) });
       onHostSwitched?.();
       setSwitchingHostId(null);
       return;
@@ -661,7 +670,7 @@ export function DesktopHostSwitcherDialog({
     });
   }, [localOrigin, t]);
 
-  const switchToLocal = React.useCallback(() => {
+  const switchToLocal = React.useCallback(async () => {
     sshSwitchTokenRef.current += 1;
     setSwitchingHostId(null);
     setSshSwitchModal((prev) => ({
@@ -674,7 +683,8 @@ export function DesktopHostSwitcherDialog({
     }));
     const localTarget = toNavigationUrl(localOrigin);
     if (isElectronShell()) {
-      switchRuntimeEndpoint({ apiBaseUrl: localOrigin, clientToken: null, runtimeKey: 'local' });
+      const clientToken = await getLocalClientToken();
+      switchRuntimeEndpoint({ apiBaseUrl: localOrigin, clientToken: clientToken || null, runtimeKey: 'local' });
       onHostSwitched?.();
       return;
     }
@@ -1047,7 +1057,7 @@ export function DesktopHostSwitcherDialog({
               type="button"
               size="sm"
               variant="outline"
-              onClick={switchToLocal}
+              onClick={() => void switchToLocal()}
             >
               {t('desktopHostSwitcher.actions.switchToLocal')}
             </Button>
@@ -1164,17 +1174,22 @@ export function DesktopHostSwitcherButton({ headerIconButtonClass }: DesktopHost
       connecting: false,
     });
 
+    let nextLocalOrigin = localOrigin;
     await desktopHostsGet()
       .then((cfg) => {
-        if (cfg.localOrigin) setLocalOrigin(cfg.localOrigin);
+        if (cfg.localOrigin) {
+          nextLocalOrigin = cfg.localOrigin;
+          setLocalOrigin(cfg.localOrigin);
+        }
         return desktopHostsSet({ hosts: cfg.hosts, defaultHostId: LOCAL_HOST_ID });
       })
       .catch(() => undefined);
 
     if (isElectronShell()) {
-      switchRuntimeEndpoint({ apiBaseUrl: localOrigin, clientToken: null, runtimeKey: 'local' });
+      const clientToken = await getLocalClientToken();
+      switchRuntimeEndpoint({ apiBaseUrl: nextLocalOrigin, clientToken: clientToken || null, runtimeKey: 'local' });
     } else {
-      window.location.assign(toNavigationUrl(localOrigin));
+      window.location.assign(toNavigationUrl(nextLocalOrigin));
     }
   }, [localOrigin]);
 

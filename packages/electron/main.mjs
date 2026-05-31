@@ -2929,6 +2929,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return null;
     }
 
+    case 'desktop_local_client_token_get':
+      return readDesktopLocalClientToken();
+
     case 'desktop_host_probe':
       return probeHostWithTimeout(String(args.url || ''), 2_000, String(args.clientToken || ''));
 
