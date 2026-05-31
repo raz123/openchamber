@@ -12,7 +12,6 @@ import type { UpdateInfo, UpdateProgress } from '@/lib/desktop';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
 type WebUpdateState = 'idle' | 'updating' | 'restarting' | 'reconnecting' | 'error';
@@ -144,7 +143,7 @@ async function installWebUpdate(): Promise<InstallWebUpdateResult> {
 
 async function isServerReachable(): Promise<boolean> {
   try {
-    const response = await fetch(getRuntimeUrlResolver().health(), {
+    const response = await runtimeFetch('/health', {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });

@@ -1,5 +1,5 @@
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
-import type { FilesAPI, RuntimeAPIs } from "../api/types";
+import type { FilesAPI } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
 import type {
   Session,
@@ -18,6 +18,7 @@ import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
 import { getRuntimeBearerTokenSync } from "@/lib/runtime-auth";
+import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -212,10 +213,7 @@ const normalizeFsPath = (path: string): string => path.replace(/\\/g, "/");
 const FS_LIST_CACHE_TTL_MS = 400;
 
 const getDesktopFilesApi = (): FilesAPI | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = getRegisteredRuntimeAPIs();
   if (apis && apis.runtime?.isDesktop && apis.files) {
     return apis.files;
   }
@@ -528,7 +526,7 @@ class OpencodeService {
       ...(this.currentDirectory ? { directory: this.currentDirectory } : {}),
       ...(typeof limit === 'number' ? { limit } : {}),
     });
-    return response.data || [];
+    return unwrapSdkData(response, 'session.messages');
   }
 
   async getSessionTodos(sessionId: string): Promise<Array<{ id: string; content: string; status: string; priority: string }>> {

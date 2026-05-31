@@ -897,7 +897,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     void (async () => {
       const probe = async (): Promise<Response | null> => {
         try {
-          return await fetch(proxySrc, {
+          return await runtimeFetch(proxySrc, {
             method: 'GET',
             credentials: 'include',
             cache: 'no-store',

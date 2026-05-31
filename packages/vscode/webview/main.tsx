@@ -3,6 +3,7 @@ import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, 
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
+import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
 import {
   buildVSCodeThemeFromPalette,
   readVSCodeThemePalette,
@@ -347,6 +348,14 @@ const jsonResponse = (body: unknown, status = 200): Response => {
 
 const unsupportedWebRouteResponse = (feature: string): Response => {
   return jsonResponse({ error: `${feature} is not supported in VS Code` }, 501);
+};
+
+const pluginConfigErrorStatus = (message: string): number => {
+  const lower = message.toLowerCase();
+  if (lower.includes('already exists')) return 409;
+  if (lower.includes('not found')) return 404;
+  if (lower.includes('required') || lower.includes('invalid') || lower.includes('must ')) return 400;
+  return 500;
 };
 
 const isNullBodyStatus = (status: number): boolean => status === 204 || status === 205 || status === 304;
@@ -855,6 +864,98 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
   if (pathname.startsWith('/api/config/reload')) {
     await sendBridgeMessage('api:config/reload');
     return new Response(JSON.stringify({ restarted: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if (pathname === '/api/config/plugins' && method === 'GET') {
+    try {
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', { method, target: 'list', directory });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  if (pathname === '/api/config/plugins/registry' && method === 'GET') {
+    try {
+      const rawSpecs = url.searchParams.get('specs') || '';
+      const specs = rawSpecs ? rawSpecs.split(',').map((spec) => spec.trim()).filter(Boolean) : [];
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', {
+        method,
+        target: 'registry',
+        specs,
+        refresh: url.searchParams.get('refresh') === 'true',
+        directory,
+      });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  if (pathname === '/api/config/plugins/entry' && method === 'POST') {
+    try {
+      const body = await extractJsonBody(input, init, method);
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', { method, target: 'entry', body, directory });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  const pluginEntryMatch = pathname.match(/^\/api\/config\/plugins\/entry\/([^/]+)$/);
+  if (pluginEntryMatch) {
+    try {
+      const body = method === 'GET' || method === 'DELETE' ? undefined : await extractJsonBody(input, init, method);
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', {
+        method,
+        target: 'entry',
+        pluginId: decodeURIComponent(pluginEntryMatch[1]),
+        body,
+        directory,
+      });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  if (pathname === '/api/config/plugins/file' && method === 'POST') {
+    try {
+      const body = await extractJsonBody(input, init, method);
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', { method, target: 'file', body, directory });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  const pluginFileMatch = pathname.match(/^\/api\/config\/plugins\/file\/([^/]+)$/);
+  if (pluginFileMatch) {
+    try {
+      const body = method === 'GET' || method === 'DELETE' ? undefined : await extractJsonBody(input, init, method);
+      const directory = getRequestDirectoryHint(url, input, init);
+      const data = await sendBridgeMessage('api:config/plugins', {
+        method,
+        target: 'file',
+        pluginId: decodeURIComponent(pluginFileMatch[1]),
+        body,
+        directory,
+      });
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
   }
 
   if (pathname.startsWith('/api/openchamber/models-metadata')) {
@@ -1411,14 +1512,7 @@ const fetchLastAssistantMessageText = async (sessionId: string, messageId?: stri
   if (!sessionId) return '';
 
   try {
-    const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/message?limit=5`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!response.ok) return '';
-
-    const messages = await response.json().catch(() => null) as unknown;
+    const messages = await opencodeClient.getSessionMessages(sessionId, 5);
     if (!Array.isArray(messages)) return '';
 
     let target = messageId

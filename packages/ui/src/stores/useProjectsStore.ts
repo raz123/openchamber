@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { opencodeClient } from '@/lib/opencode/client';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import type { ProjectEntry } from '@/lib/api/types';
 import type { DesktopSettings } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
@@ -326,8 +327,7 @@ const getVSCodeWorkspaceProject = (): { projects: ProjectEntry[]; activeProjectI
     return null;
   }
 
-  const runtimeApis = (window as unknown as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } })
-    .__OPENCHAMBER_RUNTIME_APIS__;
+  const runtimeApis = getRegisteredRuntimeAPIs();
   if (!runtimeApis?.runtime?.isVSCode) {
     return null;
   }

@@ -4,7 +4,8 @@
  * Migrates from legacy <project>/.openchamber/openchamber.json.
  */
 
-import type { FilesAPI, RuntimeAPIs } from './api/types';
+import type { FilesAPI } from './api/types';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getDesktopHomeDirectory } from './desktop';
 import { isVSCodeRuntime } from './desktop';
 import { sanitizeStarterRefs, type DraftStarterRef } from './draftStarters';
@@ -22,8 +23,7 @@ const USER_PROJECTS_DIR_SEGMENTS = ['.config', 'openchamber', 'projects'];
  * Get the runtime Files API if available (Desktop/VSCode).
  */
 function getRuntimeFilesAPI(): FilesAPI | null {
-  if (typeof window === 'undefined') return null;
-  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs }).__OPENCHAMBER_RUNTIME_APIS__;
+  const apis = getRegisteredRuntimeAPIs();
   if (apis?.files) {
     return apis.files;
   }

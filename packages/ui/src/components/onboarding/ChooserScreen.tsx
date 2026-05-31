@@ -10,7 +10,6 @@ import { cn } from '@/lib/utils';
 import { RemoteConnectionForm } from './RemoteConnectionForm';
 import { desktopHostsGet, desktopHostsSet } from '@/lib/desktopHosts';
 import { useI18n } from '@/lib/i18n';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
 const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash';
@@ -107,7 +106,7 @@ export function ChooserScreen({ onCliAvailable }: ChooserScreenProps) {
 
   const checkCliAvailability = React.useCallback(async (): Promise<boolean> => {
     try {
-      const response = await fetch(getRuntimeUrlResolver().health());
+      const response = await runtimeFetch('/health');
       if (!response.ok) return false;
       const data = await response.json();
       return data.openCodeRunning === true || data.isOpenCodeReady === true;

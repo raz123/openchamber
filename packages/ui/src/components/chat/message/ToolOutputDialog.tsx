@@ -28,7 +28,6 @@ import { JsonTreeView } from '@/components/ui/JsonTreeView';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 
 interface ToolOutputDialogProps {
     popup: ToolPopupContent;
@@ -741,7 +740,7 @@ const MermaidPreviewDialog: React.FC<{
             if (!normalizedPath) {
                 sourcePromise = Promise.reject(new Error('Invalid local file path for Mermaid preview.'));
             } else {
-                sourcePromise = runtimeFetch(getRuntimeUrlResolver().rawFile(normalizedPath))
+                sourcePromise = runtimeFetch('/api/fs/raw', { query: { path: normalizedPath } })
                     .then((response) => {
                         if (!response.ok) {
                             return Promise.reject(new Error(`Failed to read diagram file (${response.status})`));

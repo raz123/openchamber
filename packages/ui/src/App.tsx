@@ -33,7 +33,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { disposeTerminalInputTransport } from '@/lib/terminalApi';
-import { getRuntimeUrlResolver } from '@/lib/runtime-url';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import { subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { SyncProvider } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
@@ -366,7 +366,7 @@ function App({ apis }: AppProps) {
     let cancelled = false;
 
     const run = async () => {
-      const res = await fetch(getRuntimeUrlResolver().health(), { method: 'GET' }).catch(() => null);
+      const res = await runtimeFetch('/health', { method: 'GET' }).catch(() => null);
       if (!res || !res.ok || cancelled) return;
       const data = (await res.json().catch(() => null)) as null | {
         planModeExperimentalEnabled?: unknown;

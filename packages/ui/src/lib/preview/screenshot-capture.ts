@@ -1,5 +1,6 @@
 import { snapdom } from '@zumer/snapdom';
 import { getFontEmbedCSS, toJpeg } from 'html-to-image';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 
 export type PreviewElementMetadata = {
   frame: 'top';
@@ -475,7 +476,7 @@ const getExternalResourceProxyUrl = async (url: URL): Promise<string> => {
   const existingRequest = previewProxyTargetRequests.get(targetKey);
   const request = existingRequest ?? (async () => {
     try {
-      const response = await fetch('/api/preview/targets', {
+      const response = await runtimeFetch('/api/preview/targets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

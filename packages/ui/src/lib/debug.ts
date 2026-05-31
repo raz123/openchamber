@@ -9,6 +9,7 @@ import { copyTextToClipboard as copyPlainTextToClipboard } from '@/lib/clipboard
 import { getSyncSessions, getSyncMessages, getSyncParts } from '@/sync/sync-refs';
 import { useStreamingStore } from '@/sync/streaming';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 export interface DebugMessageInfo {
   messageId: string;
@@ -219,9 +220,7 @@ export const debugUtils = {
       }
     })();
 
-    const runtimeApis = typeof window !== 'undefined'
-      ? (window as any).__OPENCHAMBER_RUNTIME_APIS__
-      : null;
+    const runtimeApis = getRegisteredRuntimeAPIs();
     const isTauriShell = typeof window !== 'undefined' && Boolean((window as any).__TAURI__);
 
     const safeJson = async (resp: Response) => {
