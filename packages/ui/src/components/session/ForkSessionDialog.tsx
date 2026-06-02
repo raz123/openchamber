@@ -58,14 +58,18 @@ export function ForkSessionDialog(props: ForkSessionDialogProps) {
     void loadAgentsStoreAgents();
   }, [open, loadProviders, loadConfigAgents, loadAgentsStoreAgents, projectDirectory]);
 
+  // Reset only when the dialog transitions to open. Reading the store snapshot
+  // here (instead of subscribing) avoids clobbering in-progress user edits when
+  // the config store refreshes in the background while the dialog is open.
   React.useEffect(() => {
     if (!open) return;
-    setProviderID(currentProviderID);
-    setModelID(currentModelID);
-    setVariant(currentVariant);
-    setAgent(currentAgentName);
+    const config = useConfigStore.getState();
+    setProviderID(config.currentProviderId);
+    setModelID(config.currentModelId);
+    setVariant(config.currentVariant || '');
+    setAgent(config.currentAgentName || '');
     setInstructions(EXECUTION_FORK_DEFAULT_INSTRUCTIONS);
-  }, [open, currentProviderID, currentModelID, currentVariant, currentAgentName]);
+  }, [open]);
 
   React.useEffect(() => {
     if (!open || providers.length === 0) return;

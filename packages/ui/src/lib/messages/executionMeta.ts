@@ -27,12 +27,12 @@ export const EXECUTION_FORK_DEFAULT_INSTRUCTIONS =
 // Fixed connective that opens the forked assistant content. Not editable by the
 // user — it sits between the user's instructions and the assistant message.
 export const EXECUTION_FORK_CONTENT_PREFACE =
-    "This message bellow comes from an AI agent in another session. Here is the content of the message:";
+    "This message below comes from an AI agent in another session. Here is the content of the message:";
 
 // Builds the final message sent to the new session:
 //   <user instructions>
 //
-//   This message bellow comes from an AI agent in another session. Here is the content of the message:
+//   This message below comes from an AI agent in another session. Here is the content of the message:
 //   <assistant content>
 export const composeForkSessionMessage = (instructions: string, assistantContent: string): string =>
     `${instructions.trim()}\n\n${EXECUTION_FORK_CONTENT_PREFACE}\n${assistantContent}`;
