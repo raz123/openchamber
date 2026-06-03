@@ -2,7 +2,6 @@ import React from 'react';
 import { useI18n } from '@/lib/i18n';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Icon } from '@/components/icon/Icon';
-import { toast } from '@/components/ui';
 import { useYoloStore } from '@/stores/useYoloStore';
 
 const YOLO_CONFIRM_KEY = 'openchamber.yolo.confirmed.v1';
@@ -29,13 +28,7 @@ export const PermissionsSettings: React.FC = () => {
         }
         window.localStorage.setItem(YOLO_CONFIRM_KEY, '1');
       }
-      void setEnabled(next).then(() => {
-        toast[next ? 'success' : 'info'](
-          next
-            ? t('settings.permissions.yolo.toast.enabled')
-            : t('settings.permissions.yolo.toast.disabled')
-        );
-      });
+      void setEnabled(next);
     },
     [setEnabled, t]
   );
@@ -69,12 +62,14 @@ export const PermissionsSettings: React.FC = () => {
             }
           }}
         >
-          <Checkbox
-            checked={enabled}
-            onChange={(value) => handleToggle(value)}
-            ariaLabel={t('settings.permissions.yolo.toggle.aria')}
-            disabled={saving || loading}
-          />
+          <span onClick={(e) => e.stopPropagation()}>
+            <Checkbox
+              checked={enabled}
+              onChange={(next) => handleToggle(next)}
+              ariaLabel={t('settings.permissions.yolo.toggle.aria')}
+              disabled={saving || loading}
+            />
+          </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="typography-ui-label flex items-center gap-2 text-foreground">
               <Icon name="shield-keyhole" className="h-4 w-4" />

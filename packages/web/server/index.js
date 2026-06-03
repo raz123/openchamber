@@ -684,6 +684,8 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
 
 const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSendPushForTrigger(...args);
 const setAutoAcceptSession = (...args) => notificationTriggerRuntime.setAutoAcceptSession(...args);
+const setYoloSuppression = (...args) => notificationTriggerRuntime.setYoloSuppression(...args);
+const getYoloSuppression = (...args) => notificationTriggerRuntime.getYoloSuppression(...args);
 
 const globalMessageStreamHub = createGlobalMessageStreamHub({
   buildOpenCodeUrl,
@@ -1186,6 +1188,8 @@ async function main(options = {}) {
     fetchFreeZenModels,
     getCachedZenModels,
     setAutoAcceptSession,
+    setYoloSuppression,
+    getYoloSuppression,
   });
   uiAuthController = bootstrapResult.uiAuthController;
 
