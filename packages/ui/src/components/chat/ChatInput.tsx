@@ -689,8 +689,19 @@ const YoloStatusPill = React.memo(function YoloStatusPill(props: YoloStatusPillP
 
     const handleToggle = React.useCallback(() => {
         if (saving || loading) return;
-        void setEnabled(!enabled);
-    }, [enabled, loading, saving, setEnabled]);
+        const next = !enabled;
+        // Mirror the first-enable confirmation guard from PermissionsSettings.tsx.
+        // A user who has never visited the Permissions page must confirm before
+        // YOLO mode silently auto-approves every permission prompt.
+        if (next && typeof window !== 'undefined' && !window.localStorage.getItem('openchamber.yolo.confirmed.v1')) {
+            const accepted = window.confirm(t('settings.permissions.yolo.confirm.enable'));
+            if (!accepted) {
+                return;
+            }
+            window.localStorage.setItem('openchamber.yolo.confirmed.v1', '1');
+        }
+        void setEnabled(next);
+    }, [enabled, loading, saving, setEnabled, t]);
 
     const ariaLabel = enabled
         ? t('chat.chatInput.yolo.disable')
