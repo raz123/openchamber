@@ -1,9 +1,13 @@
 import { describe, expect, test, beforeEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
+import type { QuestionRequest } from "@/types/question"
 
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
+const scopedClientDirectories: string[] = []
+const registeredSessionDirectories: Array<{ sessionID: string; directory: string }> = []
 let sessionRevertResult: { data?: unknown; error?: unknown; response?: { status?: number } } = {}
+let questionReplyError: unknown | null = null
 
 const mockScopedClient = {
   permission: {
@@ -15,6 +19,9 @@ const mockScopedClient = {
   question: {
     reply: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reply", params })
+      if (questionReplyError) {
+        return Promise.resolve({ error: questionReplyError, response: { status: 404 } })
+      }
       return Promise.resolve({ data: true })
     }),
     reject: mock((params: Record<string, unknown>) => {
@@ -48,6 +55,9 @@ const mockSdk = {
   question: {
     reply: mock((params: Record<string, unknown>) => {
       replyCalls.push({ method: "question.reply", params })
+      if (questionReplyError) {
+        return Promise.resolve({ error: questionReplyError, response: { status: 404 } })
+      }
       return Promise.resolve({ data: true })
     }),
     reject: mock((params: Record<string, unknown>) => {
@@ -60,8 +70,10 @@ const mockSdk = {
 // Mock opencodeClient singleton
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    getScopedSdkClient: (_: string) => mockScopedClient,
+    getScopedSdkClient: (directory: string) => {
+      scopedClientDirectories.push(directory)
+      return mockScopedClient
+    },
     getDirectory: () => "/test/project",
     replyToPermission: mock((requestId: string, reply: string, options?: { directory?: string | null }) => {
       replyCalls.push({ method: "permission.reply", params: { requestID: requestId, reply, directory: options?.directory } })
@@ -128,14 +140,18 @@ mock.module("./input-store", () => ({
   },
 }))
 
-// Mock useGlobalSessionsStore (imported but not used in permission functions)
 mock.module("@/stores/useGlobalSessionsStore", () => ({
-  useGlobalSessionsStore: {},
+  useGlobalSessionsStore: {
+    getState: () => ({
+      upsertSession: () => {},
+    }),
+  },
 }))
 
-// Mock sync-refs (imported but not used in permission functions)
 mock.module("./sync-refs", () => ({
-  registerSessionDirectory: () => {},
+  registerSessionDirectory: (sessionID: string, directory: string) => {
+    registeredSessionDirectories.push({ sessionID, directory })
+  },
 }))
 
 import { create, type StoreApi } from "zustand"
@@ -170,6 +186,7 @@ function createChildStores(entries: Array<[string, StoreApi<DirectoryStore>]>) {
 describe("respondToPermission passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    scopedClientDirectories.length = 0
     sessionRevertResult = {}
   })
 
@@ -229,6 +246,7 @@ describe("respondToPermission passes directory", () => {
 describe("revertToMessage passes session directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    scopedClientDirectories.length = 0
     sessionRevertResult = {}
     Object.assign(inputState, {
       pendingInputText: "previous draft",
@@ -296,6 +314,8 @@ describe("revertToMessage passes session directory", () => {
 describe("dismissPermission passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    scopedClientDirectories.length = 0
+    questionReplyError = null
   })
 
   test("passes directory and reply=reject", async () => {
@@ -326,6 +346,8 @@ describe("dismissPermission passes directory", () => {
 describe("respondToQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    scopedClientDirectories.length = 0
+    questionReplyError = null
   })
 
   test("passes directory to question.reply", async () => {
@@ -339,12 +361,45 @@ describe("respondToQuestion passes directory", () => {
     expect(replyCalls.length).toBe(1)
     expect(replyCalls[0].params.requestID).toBe("q-1")
     expect(replyCalls[0].params.directory).toBe("/test/project")
+    expect(scopedClientDirectories).toEqual(["/test/project"])
+  })
+
+  test("removes stale question from child store when reply returns not found", async () => {
+    const question: QuestionRequest = {
+      id: "q-stale",
+      sessionID: "session-a",
+      questions: [
+        {
+          question: "Choose an option",
+          header: "Choice",
+          options: [{ label: "Yes", description: "Proceed" }],
+        },
+      ],
+    }
+    const store = createStore({}, { question: { "session-a": [question] } })
+    const childStores = createChildStores([["/test/project", store]])
+    questionReplyError = Object.assign(new Error("question.reply failed (404): QuestionNotFoundError"), { status: 404 })
+
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    let thrown: unknown
+    try {
+      await respondToQuestion("session-a", "q-stale", [["Yes"]])
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    expect(store.getState().question["session-a"]).toBe(undefined)
   })
 })
 
 describe("rejectQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    scopedClientDirectories.length = 0
+    questionReplyError = null
   })
 
   test("passes directory to question.reject", async () => {
