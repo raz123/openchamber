@@ -5,14 +5,16 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 // Mirror the yolo flag to the server so the notification runtime silences
 // ALL trigger paths (completion, error, question, permission) at the source.
 // Also persists the value in OpenChamber settings for durability.
-const mirrorYoloToServer = (enabled: boolean): void => {
-  void runtimeFetch('/api/notifications/yolo-suppress', {
+// Throws on failure so the caller can revert UI state and surface the error.
+const mirrorYoloToServer = async (enabled: boolean): Promise<void> => {
+  const res = await runtimeFetch('/api/notifications/yolo-suppress', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
-  }).catch(() => {
-    /* best-effort */
   });
+  if (!res.ok) {
+    throw new Error(`Server returned ${res.status}`);
+  }
 };
 
 type YoloState = {
@@ -30,6 +32,8 @@ export const useYoloStore = create<YoloState>((set) => ({
   saving: false,
   lastError: null,
   refresh: async () => {
+    // Dedup: two YoloStatusPill instances both call refresh() on mount.
+    if (useYoloStore.getState().loading) return;
     set({ loading: true, lastError: null });
     try {
       // Source of truth is the OpenChamber server (persisted in settings).
@@ -54,12 +58,11 @@ export const useYoloStore = create<YoloState>((set) => ({
   },
   setEnabled: async (enabled: boolean) => {
     set({ saving: true, lastError: null });
-    // Arm suppression FIRST — before the OpenCode config round-trip — so
-    // there is no race window where a notification trigger event arrives
-    // between the yolo toggle and the suppression flag being set.
-    set({ enabled });
-    mirrorYoloToServer(enabled);
     try {
+      // Arm server suppression FIRST — before the OpenCode config round-trip.
+      // If this fails, don't update local state — the UI stays off.
+      await mirrorYoloToServer(enabled);
+      set({ enabled });
       await opencodeClient.setYolo(enabled);
       set({ saving: false });
       // If setYolo fails, do NOT revert suppression. The flag was already

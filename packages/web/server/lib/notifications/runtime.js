@@ -57,6 +57,18 @@ export const createNotificationTriggerRuntime = (deps) => {
   let yoloSuppressed = false;
   const setYoloSuppression = (enabled) => {
     yoloSuppressed = enabled === true;
+    if (yoloSuppressed) {
+      // Clear any pending debounce timers — a timer may have been set before
+      // the flag was armed (startup race, or toggle-on while debounce in flight).
+      for (const timer of pushQuestionDebounceTimers.values()) {
+        clearTimeout(timer);
+      }
+      pushQuestionDebounceTimers.clear();
+      for (const entry of pushPermissionDebounceTimers.values()) {
+        clearTimeout(entry.timer);
+      }
+      pushPermissionDebounceTimers.clear();
+    }
   };
   const getYoloSuppression = () => yoloSuppressed;
 
@@ -388,6 +400,10 @@ export const createNotificationTriggerRuntime = (deps) => {
       const timer = setTimeout(async () => {
         pushQuestionDebounceTimers.delete(sessionId);
 
+        // YOLO may have been armed after the timer was set (startup race or
+        // runtime toggle). Check before dispatching.
+        if (yoloSuppressed) return;
+
         const settings = await readSettingsFromDisk();
         if (settings.notifyOnQuestion === false) {
           return;
@@ -505,6 +521,10 @@ export const createNotificationTriggerRuntime = (deps) => {
 
       const timer = setTimeout(async () => {
         pushPermissionDebounceTimers.delete(sessionId);
+
+        // YOLO may have been armed after the timer was set (startup race or
+        // runtime toggle). Check before dispatching.
+        if (yoloSuppressed) return;
 
         if (await isSessionAutoAccepting(sessionId)) {
           if (requestKey) notifiedPermissionRequests.add(requestKey);

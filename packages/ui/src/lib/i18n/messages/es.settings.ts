@@ -1762,7 +1762,5 @@ export const settingsDict = {
   'settings.permissions.yolo.toggle.description': 'Auto-approve every "ask" permission prompt globally. Resets only when you turn it off.',
   'settings.permissions.yolo.warning.active': 'Active. The agent will run tool calls without prompting you.',
   'settings.permissions.yolo.confirm.enable': 'YOLO mode auto-approves every permission prompt. Use only in disposable environments. Continue?',
-  'settings.permissions.yolo.toast.enabled': 'YOLO mode enabled',
-  'settings.permissions.yolo.toast.disabled': 'YOLO mode disabled',
   'settings.permissions.yolo.error.label': 'Failed: {message}',
 } as const;

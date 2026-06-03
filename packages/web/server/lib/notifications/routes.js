@@ -51,19 +51,6 @@ export const registerNotificationRoutes = (app, dependencies) => {
     getYoloSuppression,
   } = dependencies;
 
-  // Initialize the YOLO suppression flag from persisted settings so it survives
-  // server restarts. Best-effort — a clean install has no yolo field yet.
-  (async () => {
-    try {
-      const settings = await readSettingsFromDiskMigrated();
-      if (settings?.yolo === true && typeof setYoloSuppression === 'function') {
-        setYoloSuppression(true);
-      }
-    } catch {
-      /* best-effort: defaults to no suppression */
-    }
-  })();
-
   const ensureSessionWatcher = async () => {
     if (typeof ensureGlobalWatcherStarted !== 'function') {
       return;
